@@ -3,6 +3,7 @@ package relay
 import (
 	"context"
 	"encoding/json"
+	"maps"
 	"time"
 
 	"github.com/bestruirui/octopus/internal/model"
@@ -39,6 +40,9 @@ type RelayMetrics struct {
 	BillInputTokens      *int
 	CacheReadTokens      *int
 	CacheWriteTokens     *int
+
+	// 参数覆盖
+	ParamOverride string
 }
 
 func NewRelayMetrics(apiKeyID int, requestModel string, rawBody []byte, req *transformerModel.InternalLLMRequest) *RelayMetrics {
@@ -204,8 +208,29 @@ func (m *RelayMetrics) saveLog(ctx context.Context, err error, duration time.Dur
 	if len(m.RawRequest) > 0 {
 		relayLog.RequestContent = string(m.RawRequest)
 	} else if m.InternalRequest != nil {
-		if reqJSON, jsonErr := json.Marshal(m.InternalRequest); jsonErr == nil {
+		reqJSON, jsonErr := json.Marshal(m.InternalRequest)
+		if jsonErr != nil {
+			return
+		}
+		if m.ParamOverride == "" {
 			relayLog.RequestContent = string(reqJSON)
+		} else {
+			var reqMap map[string]any
+			if err := json.Unmarshal(reqJSON, &reqMap); err != nil {
+				relayLog.RequestContent = string(reqJSON)
+			} else {
+				var override map[string]any
+				if err := json.Unmarshal([]byte(m.ParamOverride), &override); err != nil {
+					relayLog.RequestContent = string(reqJSON)
+				} else {
+					maps.Copy(reqMap, override)
+					if finalJSON, err := json.Marshal(reqMap); err != nil {
+						relayLog.RequestContent = string(reqJSON)
+					} else {
+						relayLog.RequestContent = string(finalJSON)
+					}
+				}
+			}
 		}
 	}
 

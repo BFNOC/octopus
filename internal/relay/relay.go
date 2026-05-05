@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"slices"
 	"strings"
@@ -438,6 +439,8 @@ func (ra *relayAttempt) attempt() attemptResult {
 		// 会话保持：更新粘性记录
 		balancer.SetSticky(ra.apiKeyID, ra.requestModel, ra.channel.ID, ra.usedKey.ID)
 
+		ra.metrics.ParamOverride = paramOverrideValue(ra.channel.ParamOverride)
+
 		return attemptResult{Success: true}
 	}
 
@@ -470,7 +473,9 @@ func (ra *relayAttempt) attempt() attemptResult {
 	// 注意：熔断器记录已移至 Handler() 的同通道重试循环外，
 	// 避免重试期间过早触发熔断
 
-	written := ra.streamPayloadWritten.Load()
+	ra.metrics.ParamOverride = paramOverrideValue(ra.channel.ParamOverride)
+
+	written := ra.c.Writer.Written()
 	if written {
 		ra.collectResponse()
 	}
@@ -831,6 +836,36 @@ func (ra *relayAttempt) forwardViaHTTP(ctx context.Context) (int, error) {
 	}
 	if requestBody, readErr := readOutboundRequestBody(outboundRequest); readErr == nil {
 		ra.metrics.SetTransportRequestPayload(requestBody, ra.internalRequest.Model)
+	}
+
+	// 应用 ParamOverride 到请求体
+	if ra.channel.ParamOverride != nil && *ra.channel.ParamOverride != "" {
+		body, err := io.ReadAll(outboundRequest.Body)
+		if err != nil {
+			return 0, fmt.Errorf("failed to read body: %w", err)
+		}
+
+		var bodyMap map[string]any
+		if err := json.Unmarshal(body, &bodyMap); err != nil {
+			log.Warnf("failed to unmarshal request body: %v, skipping param_override", err)
+			outboundRequest.Body = io.NopCloser(bytes.NewBuffer(body))
+			return 0, nil
+		}
+		var override map[string]any
+		if err := json.Unmarshal([]byte(*ra.channel.ParamOverride), &override); err != nil {
+			log.Warnf("failed to unmarshal param_override: %v, skipping", err)
+			outboundRequest.Body = io.NopCloser(bytes.NewBuffer(body))
+			return 0, nil
+		}
+		maps.Copy(bodyMap, override)
+		modifiedBody, err := json.Marshal(bodyMap)
+		if err != nil {
+			log.Warnf("failed to marshal modified body: %v, skipping param_override", err)
+			outboundRequest.Body = io.NopCloser(bytes.NewBuffer(body))
+			return 0, nil
+		}
+		outboundRequest.Body = io.NopCloser(bytes.NewBuffer(modifiedBody))
+		outboundRequest.ContentLength = int64(len(modifiedBody))
 	}
 
 	// 复制请求头
@@ -1752,4 +1787,11 @@ func (ra *relayAttempt) handleResponsePassthroughAnthropic(ctx context.Context, 
 		ra.collectResponse()
 	}
 	return nil
+}
+
+func paramOverrideValue(ptr *string) string {
+	if ptr == nil || *ptr == "" {
+		return ""
+	}
+	return *ptr
 }
