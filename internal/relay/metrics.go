@@ -210,9 +210,8 @@ func (m *RelayMetrics) saveLog(ctx context.Context, err error, duration time.Dur
 	} else if m.InternalRequest != nil {
 		reqJSON, jsonErr := json.Marshal(m.InternalRequest)
 		if jsonErr != nil {
-			return
-		}
-		if m.ParamOverride == "" {
+			relayLog.RequestContent = string(reqJSON)
+		} else if m.ParamOverride == "" {
 			relayLog.RequestContent = string(reqJSON)
 		} else {
 			var reqMap map[string]any
