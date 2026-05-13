@@ -16,6 +16,8 @@ export interface APIKey {
     expire_at?: number; // Unix 时间戳（秒），不传表示永不过期
     max_cost?: number; // 不传表示无限制
     supported_models?: string; // 不传表示支持所有模型
+    model_filter_mode?: string; // none / allow-list / deny-list
+    filtered_models?: string[]; // 过滤模型列表
 }
 
 /**
@@ -195,9 +197,9 @@ export function useDeleteAPIKey() {
 
 /**
  * 获取当前 API Key 的统计数据 Hook
- * 
+ *
  * 此接口使用 API Key 认证，通过 API Key 获取对应的统计数据
- * 
+ *
  * @example
  * const { data: stats, isLoading } = useAPIKeyStats();
  */

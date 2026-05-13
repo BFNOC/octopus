@@ -77,4 +77,7 @@ func Init() {
 			log.Warnf("relay log save db task failed: %v", err)
 		}
 	})
+
+	// 注册过滤缓存刷新与孤立条目清理任务
+	Register(TaskCleanupFilters, 24*time.Hour, true, CleanupFiltersTask)
 }

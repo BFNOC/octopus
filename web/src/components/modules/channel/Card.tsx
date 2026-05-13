@@ -4,9 +4,9 @@ import {
     MorphingDialogContainer,
     MorphingDialogContent,
 } from '@/components/ui/morphing-dialog';
-import { CheckCircle2, DollarSign, Key, Layers, MessageSquare, XCircle } from 'lucide-react';
+import { Activity, CheckCircle2, DollarSign, Key, Layers, MessageSquare, XCircle } from 'lucide-react';
 import { type StatsMetricsFormatted } from '@/api/endpoints/stats';
-import { type Channel, useEnableChannel } from '@/api/endpoints/channel';
+import { type Channel, useEnableChannel, useProbeChannel } from '@/api/endpoints/channel';
 import { CardContent } from './CardContent';
 import { useTranslations } from 'next-intl';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/animate-ui/components/animate/tooltip';
@@ -19,6 +19,7 @@ export function Card({ channel, stats, layout = 'grid' }: { channel: Channel; st
     const tSections = useTranslations('channel.detail.sections');
     const tMetrics = useTranslations('channel.detail.metrics');
     const enableChannel = useEnableChannel();
+    const probeChannel = useProbeChannel();
     const isListLayout = layout === 'list';
 
     const splitModels = (models: string) =>
@@ -47,6 +48,20 @@ export function Card({ channel, stats, layout = 'grid' }: { channel: Channel; st
         );
     };
 
+    const handleProbe = () => {
+        probeChannel.mutate(channel.id, {
+            onSuccess: (results) => {
+                const supported = results.filter((r) => r.status === 'supported').length;
+                const unsupported = results.filter((r) => r.status === 'unsupported').length;
+                const skipped = results.filter((r) => r.status === 'skipped').length;
+                toast.success(`探活完成: ${supported} 支持, ${unsupported} 不支持, ${skipped} 跳过`);
+            },
+            onError: (error) => {
+                toast.error(error.message);
+            },
+        });
+    };
+
     return (
         <MorphingDialog>
             <MorphingDialogTrigger className="w-full">
@@ -67,12 +82,23 @@ export function Card({ channel, stats, layout = 'grid' }: { channel: Channel; st
                                 </div>
                             ) : null}
                         </div>
-                        <Switch
-                            checked={channel.enabled}
-                            onCheckedChange={handleEnableChange}
-                            disabled={enableChannel.isPending || channel.managed}
-                            onClick={(e) => e.stopPropagation()}
-                        />
+                        <div className="flex items-center gap-1">
+                            <button
+                                type="button"
+                                onClick={(e) => { e.stopPropagation(); handleProbe(); }}
+                                disabled={probeChannel.isPending}
+                                className="h-8 w-8 p-0 rounded-xl text-muted-foreground hover:text-foreground hover:bg-transparent disabled:opacity-40"
+                                title="探活"
+                            >
+                                <Activity className={`h-4 w-4 ${probeChannel.isPending ? 'animate-spin' : ''}`} />
+                            </button>
+                            <Switch
+                                checked={channel.enabled}
+                                onCheckedChange={handleEnableChange}
+                                disabled={enableChannel.isPending || channel.managed}
+                                onClick={(e) => e.stopPropagation()}
+                            />
+                        </div>
                     </header>
 
                     {isListLayout ? (

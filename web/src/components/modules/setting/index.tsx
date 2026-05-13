@@ -12,6 +12,7 @@ import { SettingSiteAutomation } from './SiteAutomation';
 import { SettingLog } from './Log';
 import { SettingBackup } from './Backup';
 import { SettingCircuitBreaker } from './CircuitBreaker';
+import { SettingChannelHealth } from './ChannelHealth';
 
 export function Setting() {
     return (
@@ -27,6 +28,7 @@ export function Setting() {
                 <SettingLLMSync key="setting-llmsync" />
                 <SettingSiteAutomation key="setting-site-automation" />
                 <SettingCircuitBreaker key="setting-circuit-breaker" />
+                <SettingChannelHealth key="setting-channel-health" />
                 <SettingBackup key="setting-backup" />
             </PageWrapper>
         </div>

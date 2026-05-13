@@ -10,3 +10,4 @@ octopus
 static/out/
 web/out/
 data/
+.ace-tool/

@@ -72,6 +72,7 @@ export type Channel = {
     param_override?: string | null;
     channel_proxy?: string | null;
     match_regex?: string | null;
+    model_filter_mode: string;
     managed: boolean;
     managed_source?: ManagedChannelSource | null;
     stats: StatsChannel;
@@ -82,6 +83,7 @@ type ChannelServer = Omit<Channel, 'base_urls' | 'custom_header' | 'keys'> & {
     base_urls: BaseUrl[] | null;
     custom_header: CustomHeader[] | null;
     keys: ChannelKey[] | null;
+    model_filter_mode?: string;
 };
 
 /**
@@ -371,5 +373,161 @@ export function useSyncChannel() {
         onError: (error) => {
             logger.error('渠道同步失败:', error);
         },
+    });
+}
+
+// ─── Channel Filter (disabled / allowed models) ────────────────────────────
+
+export type FilteredModel = {
+    id: number;
+    channel_id: number;
+    model_name: string;
+};
+
+/**
+ * 获取渠道禁用模型列表 Hook
+ */
+export function useDisabledModels(channelId: number) {
+    return useQuery({
+        queryKey: ['channels', 'disabled-models', channelId],
+        queryFn: async () => {
+            return apiClient.get<FilteredModel[]>(`/api/v1/channel/filter/disabled/list/${channelId}`);
+        },
+        enabled: channelId > 0,
+    });
+}
+
+/**
+ * 添加渠道禁用模型 Hook
+ */
+export function useAddDisabledModel() {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: async (data: { channel_id: number; model_name: string }) => {
+            return apiClient.post<FilteredModel>('/api/v1/channel/filter/disabled/add', data);
+        },
+        onSuccess: (_data, variables) => {
+            queryClient.invalidateQueries({ queryKey: ['channels', 'disabled-models', variables.channel_id] });
+        },
+    });
+}
+
+/**
+ * 删除渠道禁用模型 Hook
+ */
+export function useDeleteDisabledModel() {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: async (data: { channel_id: number; model_name: string }) => {
+            return apiClient.post<null>('/api/v1/channel/filter/disabled/delete', data);
+        },
+        onSuccess: (_data, variables) => {
+            queryClient.invalidateQueries({ queryKey: ['channels', 'disabled-models', variables.channel_id] });
+        },
+    });
+}
+
+/**
+ * 获取渠道允许模型列表 Hook
+ */
+export function useAllowedModels(channelId: number) {
+    return useQuery({
+        queryKey: ['channels', 'allowed-models', channelId],
+        queryFn: async () => {
+            return apiClient.get<FilteredModel[]>(`/api/v1/channel/filter/allowed/list/${channelId}`);
+        },
+        enabled: channelId > 0,
+    });
+}
+
+/**
+ * 添加渠道允许模型 Hook
+ */
+export function useAddAllowedModel() {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: async (data: { channel_id: number; model_name: string }) => {
+            return apiClient.post<FilteredModel>('/api/v1/channel/filter/allowed/add', data);
+        },
+        onSuccess: (_data, variables) => {
+            queryClient.invalidateQueries({ queryKey: ['channels', 'allowed-models', variables.channel_id] });
+        },
+    });
+}
+
+/**
+ * 删除渠道允许模型 Hook
+ */
+export function useDeleteAllowedModel() {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: async (data: { channel_id: number; model_name: string }) => {
+            return apiClient.post<null>('/api/v1/channel/filter/allowed/delete', data);
+        },
+        onSuccess: (_data, variables) => {
+            queryClient.invalidateQueries({ queryKey: ['channels', 'allowed-models', variables.channel_id] });
+        },
+    });
+}
+
+// ─── Channel Probe ─────────────────────────────────────────────────────────
+
+export type ProbeResult = {
+    model_name: string;
+    status: string;
+    ttft_ms: number;
+    http_status: number;
+    error?: string;
+};
+
+/**
+ * 探活渠道 Hook
+ */
+export function useProbeChannel() {
+    return useMutation({
+        mutationFn: async (channelId: number) => {
+            return apiClient.post<ProbeResult[]>(`/api/v1/channel/${channelId}/probe`);
+        },
+    });
+}
+
+// ─── Channel Health ────────────────────────────────────────────────────────
+
+export type ChannelHealthSignal = {
+    channel_id: number;
+    status_code: number;
+    error_text?: string;
+    failure_kind: number;
+    timestamp: string;
+    count: number;
+};
+
+export type ChannelHealthView = {
+    channel_id: number;
+    channel_name: string;
+    enabled: boolean;
+    state: string;
+    signal?: ChannelHealthSignal;
+};
+
+export type ChannelHealthSummary = {
+    total: number;
+    active: number;
+    penalized: number;
+    recovering: number;
+    quarantined: number;
+    channels: ChannelHealthView[];
+};
+
+/**
+ * 获取渠道健康状态汇总 Hook
+ */
+export function useChannelHealth() {
+    return useQuery({
+        queryKey: ['channels', 'health'],
+        queryFn: async () => {
+            return apiClient.get<ChannelHealthSummary>('/api/v1/health/channels');
+        },
+        refetchInterval: 15000,
     });
 }

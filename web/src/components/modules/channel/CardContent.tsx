@@ -36,6 +36,7 @@ export function CardContent({ channel, stats }: { channel: Channel; stats: Stats
     const [isEditing, setIsEditing] = useState(false);
     const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
     const [formData, setFormData] = useState<ChannelFormData>({
+        id: channel.id,
         name: channel.name,
         type: channel.type,
         enabled: channel.enabled,
@@ -60,6 +61,7 @@ export function CardContent({ channel, stats }: { channel: Channel; stats: Stats
         auto_sync: channel.auto_sync,
         auto_group: channel.auto_group,
         match_regex: channel.match_regex ?? '',
+        model_filter_mode: channel.model_filter_mode ?? 'none',
     });
     const t = useTranslations('channel.detail');
 

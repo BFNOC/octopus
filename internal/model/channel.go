@@ -83,7 +83,8 @@ type ChannelUpdateRequest struct {
 	CustomHeader  *[]CustomHeader        `json:"custom_header,omitempty"`
 	ChannelProxy  *string                `json:"channel_proxy,omitempty"`
 	ParamOverride *string                `json:"param_override,omitempty"`
-	MatchRegex    *string                `json:"match_regex,omitempty"`
+	MatchRegex       *string                `json:"match_regex,omitempty"`
+	ModelFilterMode  *string                `json:"model_filter_mode,omitempty"`
 
 	KeysToAdd    []ChannelKeyAddRequest    `json:"keys_to_add,omitempty"`
 	KeysToUpdate []ChannelKeyUpdateRequest `json:"keys_to_update,omitempty"`

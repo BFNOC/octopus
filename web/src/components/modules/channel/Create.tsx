@@ -27,6 +27,7 @@ export function CreateDialogContent() {
         enabled: true,
         proxy: false,
         match_regex: '',
+        model_filter_mode: 'none',
     });
     const t = useTranslations('channel.create');
 
@@ -79,6 +80,7 @@ export function CreateDialogContent() {
                         enabled: true,
                         proxy: false,
                         match_regex: '',
+                        model_filter_mode: 'none',
                     });
                     setIsOpen(false);
                 }

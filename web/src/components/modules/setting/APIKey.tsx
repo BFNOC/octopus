@@ -2,7 +2,7 @@
 
 import { useCallback, useId, useMemo, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { KeyRound, Plus, Loader, Trash2, Check, X, Info, CalendarDays, Pencil, Maximize2 } from 'lucide-react';
+import { KeyRound, Plus, Loader, Trash2, Check, X, Info, CalendarDays, Pencil, Maximize2, Filter, ShieldBan, ShieldCheck } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Input } from '@/components/ui/input';
 import { Calendar } from '@/components/ui/calendar';
@@ -23,6 +23,13 @@ import {
     useDeleteAPIKey,
     type APIKey,
 } from '@/api/endpoints/apikey';
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from '@/components/ui/select';
 import { useGroupList } from '@/api/endpoints/group';
 import { useStatsAPIKey } from '@/api/endpoints/stats';
 import { cn } from '@/lib/utils';
@@ -79,6 +86,98 @@ interface APIKeyFormProps {
     onClose: () => void;
 }
 
+function ModelFilterSection({
+    form,
+    updateForm,
+    isPending,
+}: {
+    form: Omit<APIKey, 'id' | 'api_key'>;
+    updateForm: (updater: Partial<Omit<APIKey, 'id' | 'api_key'>>) => void;
+    isPending: boolean;
+}) {
+    const filterMode = form.model_filter_mode || 'none';
+    const isFilterActive = filterMode !== 'none';
+    const filteredModels = form.filtered_models ?? [];
+    const isAllowList = filterMode === 'allow-list';
+    const [filterInput, setFilterInput] = useState('');
+
+    const handleAddFilterModel = () => {
+        const name = filterInput.trim();
+        if (!name || filteredModels.includes(name)) return;
+        updateForm({ filtered_models: [...filteredModels, name] });
+        setFilterInput('');
+    };
+
+    const handleDeleteFilterModel = (modelName: string) => {
+        updateForm({ filtered_models: filteredModels.filter((m) => m !== modelName) });
+    };
+
+    return (
+        <div className="space-y-2">
+            <div className="flex items-center gap-2">
+                <Filter className="h-4 w-4 text-muted-foreground" />
+                <span className="text-xs text-muted-foreground">模型过滤</span>
+                <Select
+                    value={filterMode}
+                    onValueChange={(v) => updateForm({ model_filter_mode: v })}
+                    disabled={isPending}
+                >
+                    <SelectTrigger className="w-32 h-8 rounded-xl text-xs">
+                        <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="rounded-xl">
+                        <SelectItem value="none">不过滤</SelectItem>
+                        <SelectItem value="deny-list">黑名单</SelectItem>
+                        <SelectItem value="allow-list">白名单</SelectItem>
+                    </SelectContent>
+                </Select>
+            </div>
+            {isAllowList && filteredModels.length === 0 && (
+                <div className="pl-6 text-xs text-amber-600 dark:text-amber-400">
+                    白名单为空时将阻止所有模型请求
+                </div>
+            )}
+            {isFilterActive && (
+                <div className="space-y-2 pl-6">
+                    <div className="flex gap-2">
+                        <Input
+                            value={filterInput}
+                            onChange={(e) => setFilterInput(e.target.value)}
+                            placeholder="输入模型名称"
+                            className="h-8 text-sm rounded-xl"
+                            disabled={isPending}
+                            onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), handleAddFilterModel())}
+                        />
+                        <button
+                            type="button"
+                            onClick={handleAddFilterModel}
+                            disabled={isPending || !filterInput.trim()}
+                            className="h-8 w-8 flex items-center justify-center rounded-lg border border-border bg-muted/20 text-muted-foreground transition-colors hover:bg-muted/30 disabled:opacity-50"
+                        >
+                            <Plus className="h-3 w-3" />
+                        </button>
+                    </div>
+                    <div className="flex flex-wrap gap-1">
+                        {filteredModels.map((modelName) => (
+                            <Badge key={modelName} variant="secondary" className="gap-1 text-xs">
+                                {isAllowList ? <ShieldCheck className="h-3 w-3" /> : <ShieldBan className="h-3 w-3" />}
+                                {modelName}
+                                <button
+                                    type="button"
+                                    onClick={() => handleDeleteFilterModel(modelName)}
+                                    className="ml-1 hover:text-destructive"
+                                >
+                                    <X className="h-3 w-3" />
+                                </button>
+                            </Badge>
+                        ))}
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+}
+
 function APIKeyForm({ apiKey, isPending, submitLabel, onSubmit, onClose }: APIKeyFormProps) {
     const t = useTranslations('setting');
     const { data: groups = [] } = useGroupList();
@@ -89,6 +188,8 @@ function APIKeyForm({ apiKey, isPending, submitLabel, onSubmit, onClose }: APIKe
         expire_at: apiKey?.expire_at,
         max_cost: apiKey?.max_cost,
         supported_models: apiKey?.supported_models,
+        model_filter_mode: apiKey?.model_filter_mode ?? 'none',
+        filtered_models: apiKey?.filtered_models ?? [],
     }));
     const [maxCostInput, setMaxCostInput] = useState(() =>
         apiKey?.max_cost != null ? String(apiKey.max_cost) : ''
@@ -163,6 +264,9 @@ function APIKeyForm({ apiKey, isPending, submitLabel, onSubmit, onClose }: APIKe
     const handleSubmit = useCallback((e: React.FormEvent) => {
         e.preventDefault();
         if (!form.name.trim()) return;
+        if (form.model_filter_mode === 'allow-list' && (!form.filtered_models || form.filtered_models.length === 0)) {
+            if (!window.confirm('白名单为空时将阻止所有模型请求，确定要保存吗？')) return;
+        }
         onSubmit(form);
     }, [form, onSubmit]);
 
@@ -311,6 +415,9 @@ function APIKeyForm({ apiKey, isPending, submitLabel, onSubmit, onClose }: APIKe
                 </div>
                 <div className="text-[11px] text-muted-foreground/80">{t('apiKey.form.modelsHint')}</div>
             </div>
+
+            {/* Model Filter */}
+            <ModelFilterSection form={form} updateForm={updateForm} isPending={isPending} />
 
             <div className="flex items-center justify-between pt-1">
                 <span className="text-xs text-muted-foreground">{t('apiKey.form.enabled')}</span>

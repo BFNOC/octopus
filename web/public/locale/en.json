@@ -189,6 +189,11 @@
             },
             "hint": "When a channel fails consecutively up to the threshold, circuit breaker trips. Cooldown grows exponentially up to the max cooldown"
         },
+        "channelHealth": {
+            "title": "Channel Health",
+            "loadFailed": "Failed to load health data",
+            "empty": "No channels"
+        },
         "saved": "Saved",
         "backup": {
             "title": "Backup / Restore",

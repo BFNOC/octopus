@@ -1,4 +1,8 @@
-import { AutoGroupType, ChannelType, type Channel, useFetchModel } from '@/api/endpoints/channel';
+import {
+    AutoGroupType, ChannelType, type Channel, useFetchModel,
+    useDisabledModels, useAddDisabledModel, useDeleteDisabledModel,
+    useAllowedModels, useAddAllowedModel, useDeleteAllowedModel,
+} from '@/api/endpoints/channel';
 import {
     Select,
     SelectContent,
@@ -13,7 +17,7 @@ import { Badge } from '@/components/ui/badge';
 import { toast } from '@/components/common/Toast';
 import { useTranslations } from 'next-intl';
 import { useEffect, useRef, useState } from 'react';
-import { RefreshCw, X, Plus } from 'lucide-react';
+import { RefreshCw, X, Plus, ShieldBan, ShieldCheck, Filter } from 'lucide-react';
 
 export interface ChannelKeyFormItem {
     id?: number;
@@ -26,6 +30,7 @@ export interface ChannelKeyFormItem {
 }
 
 export interface ChannelFormData {
+    id?: number;
     name: string;
     type: ChannelType;
     base_urls: Channel['base_urls'];
@@ -40,6 +45,7 @@ export interface ChannelFormData {
     auto_sync: boolean;
     auto_group: AutoGroupType;
     match_regex: string;
+    model_filter_mode: string;
 }
 
 export interface ChannelFormProps {
@@ -219,6 +225,41 @@ export function ChannelForm({
         const curr = formData.custom_header ?? [];
         if (curr.length <= 1) return;
         onFormDataChange({ ...formData, custom_header: curr.filter((_, i) => i !== idx) });
+    };
+
+    // ─── Model Filter ─────────────────────────────────────────────────────
+    const filterMode = formData.model_filter_mode || 'none';
+    const isFilterActive = filterMode !== 'none';
+    const filterType = filterMode === 'allow-list' ? 'allowed' : 'disabled';
+    const channelId = formData.id;
+
+    const { data: disabledModels = [] } = useDisabledModels(channelId ?? 0);
+    const { data: allowedModels = [] } = useAllowedModels(channelId ?? 0);
+    const addDisabled = useAddDisabledModel();
+    const deleteDisabled = useDeleteDisabledModel();
+    const addAllowed = useAddAllowedModel();
+    const deleteAllowed = useDeleteAllowedModel();
+
+    const filterModels = filterType === 'allowed' ? allowedModels : disabledModels;
+    const [filterInput, setFilterInput] = useState('');
+
+    const handleAddFilterModel = () => {
+        if (!channelId || !filterInput.trim()) return;
+        const payload = { channel_id: channelId, model_name: filterInput.trim() };
+        const mutate = filterType === 'allowed' ? addAllowed : addDisabled;
+        mutate.mutate(payload, {
+            onSuccess: () => setFilterInput(''),
+            onError: () => toast.error('Failed to add model'),
+        });
+    };
+
+    const handleDeleteFilterModel = (modelName: string) => {
+        if (!channelId) return;
+        const payload = { channel_id: channelId, model_name: modelName };
+        const mutate = filterType === 'allowed' ? deleteAllowed : deleteDisabled;
+        mutate.mutate(payload, {
+            onError: () => toast.error('Failed to remove model'),
+        });
     };
 
     return (
@@ -456,6 +497,56 @@ export function ChannelForm({
                     </div>
                 </div>
             </div>
+
+            {/* 模型过滤 */}
+            {channelId && (
+                <div className="space-y-2">
+                    <div className="flex items-center gap-2">
+                        <Filter className="h-4 w-4" />
+                        <span className="text-sm font-medium">模型过滤</span>
+                        <Select
+                            value={filterMode}
+                            onValueChange={(v) => onFormDataChange({ ...formData, model_filter_mode: v })}
+                        >
+                            <SelectTrigger className="w-32 h-8">
+                                <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="none">不过滤</SelectItem>
+                                <SelectItem value="deny-list">黑名单</SelectItem>
+                                <SelectItem value="allow-list">白名单</SelectItem>
+                            </SelectContent>
+                        </Select>
+                    </div>
+                    {isFilterActive && (
+                        <div className="space-y-2 pl-6">
+                            <div className="flex gap-2">
+                                <Input
+                                    value={filterInput}
+                                    onChange={(e) => setFilterInput(e.target.value)}
+                                    placeholder="输入模型名称"
+                                    className="h-8 text-sm"
+                                    onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), handleAddFilterModel())}
+                                />
+                                <Button type="button" size="sm" variant="outline" onClick={handleAddFilterModel}>
+                                    <Plus className="h-3 w-3" />
+                                </Button>
+                            </div>
+                            <div className="flex flex-wrap gap-1">
+                                {filterModels.map((m) => (
+                                    <Badge key={m.model_name} variant="secondary" className="gap-1 text-xs">
+                                        {filterType === 'allowed' ? <ShieldCheck className="h-3 w-3" /> : <ShieldBan className="h-3 w-3" />}
+                                        {m.model_name}
+                                        <button type="button" onClick={() => handleDeleteFilterModel(m.model_name)} className="ml-1 hover:text-destructive">
+                                            <X className="h-3 w-3" />
+                                        </button>
+                                    </Badge>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+                </div>
+            )}
 
             <Accordion type="single" collapsible className="w-full border rounded-xl bg-card">
                 <AccordionItem value="advanced" className="border-none">
