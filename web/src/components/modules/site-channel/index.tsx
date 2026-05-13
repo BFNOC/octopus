@@ -8,6 +8,7 @@ import relativeTime from 'dayjs/plugin/relativeTime';
 import 'dayjs/locale/zh-cn';
 import 'dayjs/locale/zh-tw';
 import {
+    Activity,
     ArrowUpDown,
     Check,
     CheckCircle2,
@@ -18,6 +19,7 @@ import {
     Eye,
     EyeOff,
     ExternalLink,
+    Filter,
     Globe2,
     History,
     KeyRound,
@@ -124,7 +126,7 @@ import {
     summarizeHistory,
 } from './utils';
 import { useJumpStore, type JumpTarget, type PendingJump, type SiteChannelJumpTarget, isSiteChannelJumpTarget } from '@/stores/jump';
-import { useEnableSiteAccount } from '@/api/endpoints/site';
+import { useEnableSiteAccount, useSyncSiteAccount } from '@/api/endpoints/site';
 import {
     DEFAULT_SITE_CHANNEL_PANEL_PREFERENCES,
     type SiteChannelQuickFilter,
@@ -2261,7 +2263,7 @@ function SiteChannelDialog({
                 );
             }, 1800);
 
-            if (target.kind === 'site-channel-account') {
+            if (target.kind === 'site-channel-account' || target.kind === 'site-channel-model') {
                 onJumpHandled(jumpRequest.requestId);
             }
         }, 80);
@@ -2443,6 +2445,14 @@ function SiteCardImpl({
     const failureFmt = formatCount(runtime.failureCount).formatted;
     const costFmt = formatMoney(runtime.totalCost).formatted;
 
+    const syncSiteAccount = useSyncSiteAccount();
+    const handleSyncSite = useCallback(() => {
+        if (card.accounts.length === 0 || syncSiteAccount.isPending) return;
+        for (const account of card.accounts) {
+            syncSiteAccount.mutate(account.account_id);
+        }
+    }, [card.accounts, syncSiteAccount]);
+
     // Stable navigation callbacks. Building these inside SiteCard (rather than
     // inside SiteChannelGrid.renderCard) keeps SiteCard's prop identity stable
     // across grid re-renders, so memo() can actually skip work for cards whose
@@ -2485,6 +2495,39 @@ function SiteCardImpl({
                                     title={tCard(card.enabled ? 'statusEnabled' : 'statusDisabled')}
                                 />
                                 <div className="truncate text-lg font-bold">{card.site_name}</div>
+                            </div>
+                            <div className="flex shrink-0 items-center gap-1">
+                                <Button
+                                    type="button"
+                                    size="icon-sm"
+                                    variant="ghost"
+                                    className="size-7 rounded-lg"
+                                    title="同步"
+                                    disabled={card.accounts.length === 0 || syncSiteAccount.isPending}
+                                    onClick={(e) => { e.stopPropagation(); handleSyncSite(); }}
+                                >
+                                    <RefreshCw className={cn('size-3.5', syncSiteAccount.isPending && 'animate-spin')} />
+                                </Button>
+                                <Button
+                                    type="button"
+                                    size="icon-sm"
+                                    variant="ghost"
+                                    className="size-7 rounded-lg"
+                                    title="探活"
+                                    onClick={(e) => { e.stopPropagation(); }}
+                                >
+                                    <Activity className="size-3.5" />
+                                </Button>
+                                <Button
+                                    type="button"
+                                    size="icon-sm"
+                                    variant="ghost"
+                                    className="size-7 rounded-lg"
+                                    title="过滤"
+                                    onClick={(e) => { e.stopPropagation(); }}
+                                >
+                                    <Filter className="size-3.5" />
+                                </Button>
                             </div>
                             <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
                                 <Badge variant="outline" className="h-6 px-2 text-[11px]">

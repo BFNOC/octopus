@@ -179,7 +179,7 @@ export function Toolbar() {
                 className="flex items-center gap-2"
             >
                 {/* 搜索按钮/展开框 */}
-                <div className="relative h-9 w-9">
+                <div className="relative z-10 h-9 w-9">
                     {!searchExpanded ? (
                         <motion.button
                             layoutId="search-box"

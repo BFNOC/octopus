@@ -51,7 +51,8 @@
         "key": "金鑰",
         "model": "價格",
         "log": "日誌",
-        "setting": "設定"
+        "setting": "設定",
+        "wizard": "快速設定"
     },
     "toolbar": {
         "popover": {

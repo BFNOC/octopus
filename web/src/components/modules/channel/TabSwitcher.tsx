@@ -41,18 +41,23 @@ export function ChannelTabSwitcher({ className }: Props) {
                         type="button"
                         onClick={() => setActiveTab(value)}
                         className={cn(
-                            'relative inline-flex items-baseline gap-1.5 pb-1 text-sm font-medium transition-colors',
+                            'relative flex flex-col gap-0.5 pb-1 text-left text-sm font-medium transition-colors',
                             active ? 'text-foreground' : 'text-muted-foreground hover:text-foreground',
                         )}
                     >
-                        <span>{t(key)}</span>
-                        <span
-                            className={cn(
-                                'text-xs tabular-nums transition-colors',
-                                active ? 'text-primary font-semibold' : 'text-muted-foreground',
-                            )}
-                        >
-                            {counts[value]}
+                        <div className="flex items-baseline gap-1.5">
+                            <span>{t(key)}</span>
+                            <span
+                                className={cn(
+                                    'text-xs tabular-nums transition-colors',
+                                    active ? 'text-primary font-semibold' : 'text-muted-foreground',
+                                )}
+                            >
+                                {counts[value]}
+                            </span>
+                        </div>
+                        <span className="text-[11px] leading-tight font-normal text-muted-foreground">
+                            {value === 'site' ? '自动从站点同步的渠道' : '手动创建的渠道'}
                         </span>
                         {active && (
                             <motion.span

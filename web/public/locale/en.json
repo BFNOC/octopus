@@ -51,7 +51,8 @@
         "key": "Key",
         "model": "Price",
         "log": "Log",
-        "setting": "Setting"
+        "setting": "Setting",
+        "wizard": "Wizard"
     },
     "toolbar": {
         "popover": {
