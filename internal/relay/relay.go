@@ -11,10 +11,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/bestruirui/octopus/internal/health"
 	"github.com/bestruirui/octopus/internal/helper"
 	dbmodel "github.com/bestruirui/octopus/internal/model"
 	"github.com/bestruirui/octopus/internal/op"
+	"github.com/bestruirui/octopus/internal/relay/affinity"
 	"github.com/bestruirui/octopus/internal/relay/balancer"
+	"github.com/bestruirui/octopus/internal/relay/compat"
 	"github.com/bestruirui/octopus/internal/server/resp"
 	"github.com/bestruirui/octopus/internal/transformer/inbound"
 	"github.com/bestruirui/octopus/internal/transformer/model"
@@ -50,6 +53,8 @@ func newStreamHeartbeatTicker() (*time.Ticker, <-chan time.Time) {
 	return ticker, ticker.C
 }
 
+var affinityStore = affinity.NewAffinityStore()
+
 func writeSSEHeartbeat(writer streamHeartbeatWriter) error {
 	if _, err := writer.Write([]byte(":\n\n")); err != nil {
 		return err
@@ -64,6 +69,20 @@ func Handler(inboundType inbound.InboundType, c *gin.Context) {
 	if err != nil {
 		return
 	}
+	// === Preflight 校验（Responses API） ===
+	if inboundType == inbound.InboundTypeOpenAIResponse {
+		if result := compat.ValidateResponsesRequest(internalRequest); !result.Valid {
+			resp.Error(c, http.StatusBadRequest, result.Reason)
+			return
+		}
+	}
+
+	// === APIKey 模型过滤（兼容 legacy SupportedModels） ===
+	apiKeyID := c.GetInt("api_key_id")
+	if !op.IsModelAllowedByAPIKey(apiKeyID, internalRequest.Model) {
+		resp.Error(c, http.StatusBadRequest, "model not supported")
+		return
+	}
 	supportedModels := c.GetString("supported_models")
 	if supportedModels != "" {
 		supportedModelsArray := strings.Split(supportedModels, ",")
@@ -74,7 +93,6 @@ func Handler(inboundType inbound.InboundType, c *gin.Context) {
 	}
 
 	requestModel := internalRequest.Model
-	apiKeyID := c.GetInt("api_key_id")
 
 	// 获取通道分组
 	group, err := op.GroupGetEnabledMap(requestModel, c.Request.Context())
@@ -150,6 +168,11 @@ func Handler(inboundType inbound.InboundType, c *gin.Context) {
 		}
 		if !channel.Enabled {
 			iter.Skip(channel.ID, 0, channel.Name, "channel disabled")
+			continue
+		}
+		// Channel 级模型过滤（非托管渠道，用 candidate 实际模型名判断）
+		if !channel.Managed && !op.IsModelAllowedByChannel(channel.ID, item.ModelName) {
+			iter.Skip(channel.ID, 0, channel.Name, "model filtered by channel")
 			continue
 		}
 		if responsesPassthroughRequired {
@@ -252,6 +275,23 @@ func Handler(inboundType inbound.InboundType, c *gin.Context) {
 			}
 		}
 
+		// === 健康信号推送 ===
+		errText := ""
+		if result.Err != nil {
+			errText = result.Err.Error()
+		}
+		if result.Success {
+			health.RecordSuccess(channel.ID)
+		} else {
+			health.Record(channel.ID, result.StatusCode, errText, health.ClassifyFailure(result.StatusCode, errText))
+		}
+
+		// === 协议亲和性记录 ===
+		affinityKey := fmt.Sprintf("%d:%s", apiKeyID, requestModel)
+		if result.Success {
+			affinityStore.RecordSuccess(affinityKey, channel.Type)
+		}
+
 		if result.Success {
 			metrics.Save(c.Request.Context(), true, nil, iter.Attempts())
 			return
@@ -275,6 +315,63 @@ func Handler(inboundType inbound.InboundType, c *gin.Context) {
 		}
 		lastErr = result.Err
 		lastResult = result
+	}
+
+	// === Responses 自动降级 ===
+	// 仅当非原生 passthrough 时降级（原生 Responses 工具请求不能无损转 Chat）
+	if inboundType == inbound.InboundTypeOpenAIResponse && !responsesPassthroughRequired && lastResult.StatusCode > 0 {
+		if decision := ShouldDegrade(lastResult.StatusCode, fmt.Sprintf("%v", lastErr)); decision.ShouldDegrade {
+			log.Infof("responses auto-degrade triggered (status=%d, signal=%s), trying OpenAI Chat channels",
+				lastResult.StatusCode, decision.Signal)
+			// 重新遍历候选，只尝试 OpenAI Chat 类型的 channel
+			degradeIter := balancer.NewIterator(group, apiKeyID, requestModel)
+			for degradeIter.Next() {
+				dItem := degradeIter.Item()
+				dChannel, dErr := op.ChannelGet(dItem.ChannelID, c.Request.Context())
+				if dErr != nil || !dChannel.Enabled {
+					continue
+				}
+				if dChannel.Type != outbound.OutboundTypeOpenAIChat {
+					continue
+				}
+				internalRequest.Model = dItem.ModelName
+				dOutAdapter := outbound.Get(dChannel.Type)
+				if dOutAdapter == nil {
+					continue
+				}
+				dSelectOpts := dbmodel.ChannelKeySelectOptions{ExcludeKeyIDs: make(map[int]struct{})}
+				dUsedKey := dChannel.GetChannelKey(dSelectOpts)
+				if dUsedKey.ChannelKey == "" {
+					continue
+				}
+				// 创建独立的 relayRequest 避免 iterator 状态冲突
+				degradeReq := &relayRequest{
+					c:               c,
+					inAdapter:       inAdapter,
+					internalRequest: internalRequest,
+					metrics:         metrics,
+					apiKeyID:        apiKeyID,
+					requestModel:    requestModel,
+					iter:            degradeIter,
+					rawBody:         rawBody,
+					heartbeat:       hb,
+				}
+				dAttempt := &relayAttempt{
+					relayRequest:         degradeReq,
+					outAdapter:           dOutAdapter,
+					channel:              dChannel,
+					usedKey:              dUsedKey,
+					firstTokenTimeOutSec: group.FirstTokenTimeOut,
+				}
+				dResult := dAttempt.attempt()
+				if dResult.Success {
+					affinityKey := fmt.Sprintf("%d:%s", apiKeyID, requestModel)
+					affinityStore.RecordDowngrade(affinityKey, outbound.OutboundTypeOpenAIResponse, outbound.OutboundTypeOpenAIChat)
+					metrics.Save(c.Request.Context(), true, nil, degradeIter.Attempts())
+					return
+				}
+			}
+		}
 	}
 
 	// 所有候选通道均失败

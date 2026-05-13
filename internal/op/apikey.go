@@ -31,6 +31,7 @@ func APIKeyUpdate(key *model.APIKey, ctx context.Context) error {
 	}
 	key.APIKey = existing.APIKey
 	apiKeyCache.Set(key.ID, *key)
+	InvalidateAPIKeyFilterCache(key.ID)
 	return nil
 }
 
@@ -74,6 +75,7 @@ func APIKeyDelete(id int, ctx context.Context) error {
 	}
 	apiKeyCache.Del(k.ID)
 	apiKeyIDMap.Del(k.APIKey)
+	InvalidateAPIKeyFilterCache(k.ID)
 	return nil
 }
 

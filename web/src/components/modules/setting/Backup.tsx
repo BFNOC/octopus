@@ -7,19 +7,23 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { toast } from '@/components/common/Toast';
-import { useExportDB, useImportDB } from '@/api/endpoints/setting';
+import { useExportDB, useImportDB, useImportMetAPI } from '@/api/endpoints/setting';
 
 export function SettingBackup() {
     const t = useTranslations('setting');
 
     const exportDB = useExportDB();
     const importDB = useImportDB();
+    const importMetAPI = useImportMetAPI();
 
     const [includeLogs, setIncludeLogs] = useState(false);
     const [includeStats, setIncludeStats] = useState(false);
 
     const [file, setFile] = useState<File | null>(null);
     const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+    const [metapiFile, setMetapiFile] = useState<File | null>(null);
+    const metapiFileInputRef = useRef<HTMLInputElement | null>(null);
 
     const rowsAffected = importDB.data?.rows_affected ?? null;
     const rowsAffectedList = useMemo(() => {
@@ -126,6 +130,63 @@ export function SettingBackup() {
                                 </div>
                             ))}
                         </div>
+                    </div>
+                )}
+            </div>
+
+            <div className="h-px bg-border" />
+
+            {/* 导入 MetAPI */}
+            <div className="space-y-3">
+                <div className="text-sm font-semibold text-card-foreground">导入 MetAPI 数据</div>
+                <div className="text-xs text-muted-foreground">
+                    从 MetAPI 导出的备份文件中导入站点、账号和令牌
+                </div>
+
+                <Input
+                    ref={metapiFileInputRef}
+                    type="file"
+                    accept="application/json,.json"
+                    onChange={(e) => setMetapiFile(e.target.files?.[0] ?? null)}
+                    className="rounded-xl"
+                />
+
+                <Button
+                    type="button"
+                    variant="outline"
+                    className="w-full rounded-xl"
+                    onClick={async () => {
+                        if (!metapiFile) {
+                            toast.error('请选择 MetAPI 备份文件');
+                            return;
+                        }
+                        try {
+                            const result = await importMetAPI.mutateAsync(metapiFile);
+                            const msgs = [];
+                            if (result.created_sites) msgs.push(`新建站点 ${result.created_sites}`);
+                            if (result.reused_sites) msgs.push(`复用站点 ${result.reused_sites}`);
+                            if (result.imported_tokens) msgs.push(`导入令牌 ${result.imported_tokens}`);
+                            if (result.imported_groups) msgs.push(`导入分组 ${result.imported_groups}`);
+                            if (result.imported_models) msgs.push(`导入模型 ${result.imported_models}`);
+                            toast.success(`MetAPI 导入成功：${msgs.join('，')}`);
+                            if (metapiFileInputRef.current) metapiFileInputRef.current.value = '';
+                            setMetapiFile(null);
+                        } catch (e) {
+                            toast.error(e instanceof Error ? e.message : 'MetAPI 导入失败');
+                        }
+                    }}
+                    disabled={importMetAPI.isPending}
+                >
+                    <Upload className="size-4" />
+                    {importMetAPI.isPending ? '正在导入...' : '导入 MetAPI 备份'}
+                </Button>
+
+                {importMetAPI.data?.warnings && importMetAPI.data.warnings.length > 0 && (
+                    <div className="mt-2 space-y-1">
+                        <div className="text-xs font-semibold text-amber-600">警告</div>
+                        {importMetAPI.data.warnings.map((w, i) => (
+                            <div key={i} className="text-xs text-muted-foreground">{w}</div>
+                        ))}
                     </div>
                 )}
             </div>

@@ -214,4 +214,46 @@ export function useImportDB() {
     });
 }
 
+export interface MetAPIImportResult {
+    created_sites?: number;
+    reused_sites?: number;
+    created_accounts?: number;
+    reused_accounts?: number;
+    imported_tokens?: number;
+    imported_groups?: number;
+    imported_models?: number;
+    disabled_models?: number;
+    warnings?: string[];
+}
 
+export function useImportMetAPI() {
+    return useMutation({
+        mutationFn: async (file: File) => {
+            const form = new FormData();
+            form.append('file', file);
+
+            const res = await fetch(`${API_BASE_URL}/api/v1/site/import/metapi`, {
+                method: 'POST',
+                headers: {
+                    Authorization: getAuthHeader(),
+                },
+                body: form,
+            });
+
+            const contentType = res.headers.get('content-type') || '';
+            const isJson = contentType.includes('application/json');
+            const data = isJson ? await res.json() : await res.text();
+
+            if (!res.ok) {
+                const message = getMessageField(data) ?? (typeof data === 'string' ? data : res.statusText);
+                throw new Error(message);
+            }
+
+            const nested = getDataField<MetAPIImportResult>(data);
+            return nested ?? (data as MetAPIImportResult);
+        },
+        onError: (error) => {
+            logger.error('导入 MetAPI 数据失败:', error);
+        },
+    });
+}
