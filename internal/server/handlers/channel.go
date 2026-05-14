@@ -92,11 +92,11 @@ func listChannel(c *gin.Context) {
 func createChannel(c *gin.Context) {
 	var channel model.Channel
 	if err := c.ShouldBindJSON(&channel); err != nil {
-		resp.Error(c, http.StatusBadRequest, resp.ErrInvalidJSON)
+		resp.InvalidJSON(c)
 		return
 	}
 	if err := op.ChannelCreate(&channel, c.Request.Context()); err != nil {
-		resp.Error(c, http.StatusInternalServerError, err.Error())
+		resp.ErrorWithAppError(c, http.StatusInternalServerError, channelError(codeChannelCreateFailed, "channel create failed", err))
 		return
 	}
 	stats := op.StatsChannelGet(channel.ID)
@@ -117,7 +117,7 @@ func createChannel(c *gin.Context) {
 func updateChannel(c *gin.Context) {
 	var req model.ChannelUpdateRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		resp.Error(c, http.StatusBadRequest, resp.ErrInvalidJSON)
+		resp.InvalidJSON(c)
 		return
 	}
 	// 允许 managed 渠道仅更新 model_filter_mode（模型过滤是用户级操作，不受 managed 限制）
@@ -126,7 +126,7 @@ func updateChannel(c *gin.Context) {
 	}
 	channel, err := op.ChannelUpdate(&req, c.Request.Context())
 	if err != nil {
-		resp.Error(c, http.StatusInternalServerError, err.Error())
+		resp.ErrorWithAppError(c, http.StatusInternalServerError, channelError(codeChannelUpdateFailed, "channel update failed", err))
 		return
 	}
 	stats := op.StatsChannelGet(channel.ID)
@@ -150,11 +150,11 @@ func enableChannel(c *gin.Context) {
 		Enabled bool `json:"enabled"`
 	}
 	if err := c.ShouldBindJSON(&request); err != nil {
-		resp.Error(c, http.StatusBadRequest, resp.ErrInvalidJSON)
+		resp.InvalidJSON(c)
 		return
 	}
 	if err := op.ChannelEnabled(request.ID, request.Enabled, c.Request.Context()); err != nil {
-		resp.Error(c, http.StatusInternalServerError, err.Error())
+		resp.ErrorWithAppError(c, http.StatusInternalServerError, channelError(codeChannelUpdateFailed, "channel update failed", err))
 		return
 	}
 	resp.Success(c, nil)
@@ -164,11 +164,11 @@ func deleteChannel(c *gin.Context) {
 	id := c.Param("id")
 	idNum, err := strconv.Atoi(id)
 	if err != nil {
-		resp.Error(c, http.StatusBadRequest, resp.ErrInvalidParam)
+		resp.InvalidParam(c)
 		return
 	}
 	if err := op.ChannelDel(idNum, c.Request.Context()); err != nil {
-		resp.Error(c, http.StatusInternalServerError, err.Error())
+		resp.ErrorWithAppError(c, http.StatusInternalServerError, channelError(codeChannelDeleteFailed, "channel delete failed", err))
 		return
 	}
 	resp.Success(c, nil)
@@ -176,12 +176,12 @@ func deleteChannel(c *gin.Context) {
 func fetchModel(c *gin.Context) {
 	var request model.Channel
 	if err := c.ShouldBindJSON(&request); err != nil {
-		resp.Error(c, http.StatusBadRequest, resp.ErrInvalidJSON)
+		resp.InvalidJSON(c)
 		return
 	}
 	models, err := helper.FetchModels(c.Request.Context(), request)
 	if err != nil {
-		resp.Error(c, http.StatusInternalServerError, err.Error())
+		resp.ErrorWithAppError(c, http.StatusInternalServerError, channelError(codeChannelFetchModelsFailed, "channel fetch models failed", err))
 		return
 	}
 	resp.Success(c, models)
