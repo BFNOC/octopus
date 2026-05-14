@@ -188,6 +188,15 @@ func ChannelUpdate(req *model.ChannelUpdateRequest, ctx context.Context) (*model
 		selectFields = append(selectFields, "match_regex")
 		updates.MatchRegex = req.MatchRegex
 	}
+	if req.ModelFilterMode != nil {
+		switch *req.ModelFilterMode {
+		case model.ModelFilterModeNone, model.ModelFilterModeAllowList, model.ModelFilterModeDenyList:
+			selectFields = append(selectFields, "model_filter_mode")
+			updates.ModelFilterMode = *req.ModelFilterMode
+		default:
+			return nil, fmt.Errorf("invalid model_filter_mode: %s (valid: none, allow-list, deny-list)", *req.ModelFilterMode)
+		}
+	}
 
 	// 只有当有字段需要更新时才执行 UPDATE
 	if len(selectFields) > 0 {

@@ -1,0 +1,23 @@
+# Git
+.git
+.gitignore
+
+# Node
+web/node_modules
+web/.next
+
+# Build output
+build
+data
+static/out
+web/out
+
+# IDE / tools
+.vscode
+.claude
+.codex
+.ace-tool
+.DS_Store
+
+# Go cache
+.gocache

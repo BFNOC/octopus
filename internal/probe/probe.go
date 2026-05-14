@@ -14,20 +14,33 @@ import (
 
 // ProbeResult 单个模型的探测结果
 type ProbeResult struct {
-	ModelName  string `json:"model_name"`
-	Status     string `json:"status"`
-	TTFTMs     int    `json:"ttft_ms"`
-	HTTPStatus int    `json:"http_status"`
-	Error      string `json:"error,omitempty"`
+	ModelName    string `json:"model_name"`
+	Status       string `json:"status"`
+	TTFTMs       int    `json:"ttft_ms"`
+	HTTPStatus   int    `json:"http_status"`
+	Error        string `json:"error,omitempty"`
+	ResponseText string `json:"response_text,omitempty"`
 }
 
 // ProbeInput 探测输入参数
 type ProbeInput struct {
-	BaseURL     string   `json:"base_url"`
-	APIKey      string   `json:"api_key"`
-	ModelNames  []string `json:"model_names"`
-	Timeout     int      `json:"timeout"`      // 单次请求超时（秒）
-	Concurrency int      `json:"concurrency"`  // 并发数
+	BaseURL     string            `json:"base_url"`
+	APIKey      string            `json:"api_key"`
+	ModelNames  []string          `json:"model_names"`
+	Prompt      string            `json:"prompt"`      // 自定义探测 prompt，默认 "hi"
+	Timeout     int               `json:"timeout"`     // 单次请求超时（秒）
+	Concurrency int               `json:"concurrency"` // 并发数
+	DelayMs     int               `json:"delay_ms"`    // 批次间隔（毫秒）
+	Headers     map[string]string `json:"headers"`     // 自定义请求头，nil 时使用 Cherry Studio 默认头
+}
+
+// DefaultProbeHeaders 返回 Cherry Studio 默认请求头
+func DefaultProbeHeaders() map[string]string {
+	return map[string]string{
+		"HTTP-Referer": "https://cherry-ai.com",
+		"X-Title":      "Cherry Studio",
+		"User-Agent":   "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) CherryStudio/1.8.1 Chrome/144.0.7559.236 Electron/40.8.0 Safari/537.36",
+	}
 }
 
 // chatRequest 用于构造 OpenAI 兼容的 chat completions 请求
@@ -79,6 +92,15 @@ func ProbeModels(ctx context.Context, input ProbeInput, onResult func(ProbeResul
 				onResult(r)
 			}
 		}(i, modelName)
+
+		// 批次间隔：控制探测请求的发送节奏
+		if input.DelayMs > 0 && i < len(input.ModelNames)-1 {
+			select {
+			case <-ctx.Done():
+				return results, ctx.Err()
+			case <-time.After(time.Duration(input.DelayMs) * time.Millisecond):
+			}
+		}
 	}
 
 	// 等待所有 goroutine 完成
@@ -138,10 +160,11 @@ func probeSingle(ctx context.Context, url, apiKey, modelName string, timeoutSec 
 		bodyBytes, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 		status := classifyProbeResult(resp.StatusCode, string(bodyBytes))
 		return ProbeResult{
-			ModelName:  modelName,
-			Status:     status,
-			HTTPStatus: resp.StatusCode,
-			Error:      strings.TrimSpace(string(bodyBytes)),
+			ModelName:    modelName,
+			Status:       status,
+			HTTPStatus:   resp.StatusCode,
+			Error:        strings.TrimSpace(string(bodyBytes)),
+			ResponseText: strings.TrimSpace(string(bodyBytes)),
 		}
 	}
 

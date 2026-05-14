@@ -1,6 +1,8 @@
 package handlers
 
 import (
+	"encoding/json"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -45,24 +47,46 @@ func probeChannel(c *gin.Context) {
 		return
 	}
 
-	modelNames := channel.Model
-	if channel.CustomModel != "" {
-		if modelNames != "" {
-			modelNames += ","
-		}
-		modelNames += channel.CustomModel
+	var input struct {
+		ModelNames  []string          `json:"model_names"`
+		Prompt      string            `json:"prompt"`
+		Timeout     int               `json:"timeout"`
+		Concurrency int               `json:"concurrency"`
+		DelayMs     int               `json:"delay_ms"`
+		APIKey      string            `json:"api_key"`
+		Headers     map[string]string `json:"headers"`
 	}
-	if modelNames == "" {
-		resp.Error(c, http.StatusBadRequest, "channel has no models configured")
+	if err := c.ShouldBindJSON(&input); err != nil && err.Error() != "EOF" {
+		resp.Error(c, http.StatusBadRequest, resp.ErrBadRequest)
 		return
 	}
 
-	var input struct {
-		Timeout     int    `json:"timeout"`
-		Concurrency int    `json:"concurrency"`
-		APIKey      string `json:"api_key"`
+	// 确定模型列表：优先用请求传入的，否则用通道全部模型
+	var names []string
+	if len(input.ModelNames) > 0 {
+		names = input.ModelNames
+	} else {
+		modelNames := channel.Model
+		if channel.CustomModel != "" {
+			if modelNames != "" {
+				modelNames += ","
+			}
+			modelNames += channel.CustomModel
+		}
+		if modelNames == "" {
+			resp.Error(c, http.StatusBadRequest, "channel has no models configured")
+			return
+		}
+		names = splitModelNames(modelNames)
 	}
-	_ = c.ShouldBindJSON(&input)
+
+	// 应用模型黑白名单过滤
+	names = filterModelsByChannel(channelID, names)
+
+	if len(names) == 0 {
+		resp.Error(c, http.StatusBadRequest, "no valid model names (all filtered out)")
+		return
+	}
 
 	baseURL := channel.GetBaseUrl()
 	if baseURL == "" {
@@ -81,22 +105,25 @@ func probeChannel(c *gin.Context) {
 		return
 	}
 
-	// 解析模型名列表
-	names := splitModelNames(modelNames)
-	if len(names) == 0 {
-		resp.Error(c, http.StatusBadRequest, "no valid model names")
-		return
-	}
-
 	scheduleInput := probe.ScheduleInput{
 		ChannelID:   channelID,
 		BaseURL:     baseURL,
 		APIKey:      apiKey,
 		ModelNames:  names,
+		Prompt:      input.Prompt,
 		Timeout:     input.Timeout,
 		Concurrency: input.Concurrency,
+		DelayMs:     input.DelayMs,
+		Headers:     input.Headers,
 	}
 
+	// SSE 流式返回
+	if strings.Contains(c.GetHeader("Accept"), "text/event-stream") {
+		probeChannelSSE(c, channelID, scheduleInput)
+		return
+	}
+
+	// 普通 JSON 返回
 	result, err := probe.RunSingleChannel(c.Request.Context(), scheduleInput, nil)
 	if err != nil {
 		resp.Error(c, http.StatusInternalServerError, err.Error())
@@ -105,21 +132,61 @@ func probeChannel(c *gin.Context) {
 
 	// 持久化结果
 	if len(result.Results) > 0 {
-		dbResults := make([]model.ModelProbeResult, 0, len(result.Results))
-		for _, r := range result.Results {
-			dbResults = append(dbResults, model.ModelProbeResult{
-				ChannelID:  channelID,
-				ModelName:  r.ModelName,
-				Status:     r.Status,
-				TTFTMs:     r.TTFTMs,
-				HTTPStatus: r.HTTPStatus,
-				Error:      r.Error,
-			})
-		}
-		_ = op.ProbeResultBatchInsert(c.Request.Context(), dbResults)
+		persistProbeResults(c, channelID, result.Results)
 	}
 
 	resp.Success(c, result.Results)
+}
+
+func probeChannelSSE(c *gin.Context, channelID int, input probe.ScheduleInput) {
+	c.Header("Content-Type", "text/event-stream")
+	c.Header("Cache-Control", "no-cache")
+	c.Header("Connection", "keep-alive")
+	c.Header("X-Accel-Buffering", "no")
+
+	flusher, ok := c.Writer.(http.Flusher)
+	if !ok {
+		resp.Error(c, http.StatusInternalServerError, "streaming not supported")
+		return
+	}
+
+	var allResults []probe.ProbeResult
+
+	_, err := probe.RunSingleChannel(c.Request.Context(), input, func(_ int, r probe.ProbeResult) {
+		allResults = append(allResults, r)
+		data, _ := json.Marshal(r)
+		fmt.Fprintf(c.Writer, "data: %s\n\n", data)
+		flusher.Flush()
+	})
+
+	if err != nil {
+		data, _ := json.Marshal(map[string]string{"error": err.Error()})
+		fmt.Fprintf(c.Writer, "data: %s\n\n", data)
+		flusher.Flush()
+	}
+
+	fmt.Fprintf(c.Writer, "data: [DONE]\n\n")
+	flusher.Flush()
+
+	// 持久化结果
+	if len(allResults) > 0 {
+		persistProbeResults(c, channelID, allResults)
+	}
+}
+
+func persistProbeResults(c *gin.Context, channelID int, results []probe.ProbeResult) {
+	dbResults := make([]model.ModelProbeResult, 0, len(results))
+	for _, r := range results {
+		dbResults = append(dbResults, model.ModelProbeResult{
+			ChannelID:  channelID,
+			ModelName:  r.ModelName,
+			Status:     r.Status,
+			TTFTMs:     r.TTFTMs,
+			HTTPStatus: r.HTTPStatus,
+			Error:      r.Error,
+		})
+	}
+	_ = op.ProbeResultBatchInsert(c.Request.Context(), dbResults)
 }
 
 func getProbeResults(c *gin.Context) {
@@ -163,4 +230,15 @@ func splitModelNames(modelStr string) []string {
 		}
 	}
 	return result
+}
+
+// filterModelsByChannel 根据通道的模型过滤规则（黑白名单）过滤模型列表
+func filterModelsByChannel(channelID int, models []string) []string {
+	filtered := make([]string, 0, len(models))
+	for _, m := range models {
+		if op.IsModelAllowedByChannel(channelID, m) {
+			filtered = append(filtered, m)
+		}
+	}
+	return filtered
 }

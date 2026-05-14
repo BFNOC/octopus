@@ -8,12 +8,15 @@ import (
 
 // ScheduleInput 调度输入：按 Channel 编排探测任务
 type ScheduleInput struct {
-	ChannelID   int          `json:"channel_id"`
-	BaseURL     string       `json:"base_url"`
-	APIKey      string       `json:"api_key"`
-	ModelNames  []string     `json:"model_names"`
-	Timeout     int          `json:"timeout"`
-	Concurrency int          `json:"concurrency"`
+	ChannelID   int               `json:"channel_id"`
+	BaseURL     string            `json:"base_url"`
+	APIKey      string            `json:"api_key"`
+	ModelNames  []string          `json:"model_names"`
+	Prompt      string            `json:"prompt"`
+	Timeout     int               `json:"timeout"`
+	Concurrency int               `json:"concurrency"`
+	DelayMs     int               `json:"delay_ms"`
+	Headers     map[string]string `json:"headers"`
 }
 
 // ChannelSchedule 多 Channel 并发编排器
@@ -45,11 +48,14 @@ func (s *ChannelSchedule) RunBatch(ctx context.Context, inputs []ScheduleInput, 
 				BaseURL:     in.BaseURL,
 				APIKey:      in.APIKey,
 				ModelNames:  in.ModelNames,
+				Prompt:      in.Prompt,
 				Timeout:     in.Timeout,
 				Concurrency: 1, // 由外层 ChannelSchedule 控制并发
+				DelayMs:     in.DelayMs,
+				Headers:     in.Headers,
 			}
 
-			probeResults, err := ProbeModels(ctx, probeInput, func(r ProbeResult) {
+			probeResults, err := ProbeModelsFull(ctx, probeInput, func(r ProbeResult) {
 				if onResult != nil {
 					onResult(in.ChannelID, r)
 				}

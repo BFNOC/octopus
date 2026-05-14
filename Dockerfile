@@ -2,7 +2,10 @@
 FROM node:22-alpine AS frontend
 WORKDIR /app/web
 COPY web/package.json web/pnpm-lock.yaml ./
-RUN corepack enable && pnpm install --frozen-lockfile
+RUN corepack enable && \
+    pnpm config set registry https://registry.npmmirror.com && \
+    pnpm install --frozen-lockfile --ignore-scripts && \
+    pnpm rebuild @swc/core sharp unrs-resolver
 COPY web/ ./
 RUN pnpm run build
 
@@ -10,10 +13,11 @@ RUN pnpm run build
 FROM golang:1.25-alpine AS backend
 WORKDIR /app
 COPY go.mod go.sum ./
-RUN go mod download
+RUN go env -w GOPROXY=https://goproxy.cn,direct && \
+    go mod download
 COPY . .
-COPY --from=frontend /app/web/out/ ./static/
-ARG VERSION=v1.0.0-bfnoc
+COPY --from=frontend /app/web/out/ ./static/out/
+ARG VERSION=v0.9.20-fork.2
 ARG COMMIT=unknown
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w \
   -X 'github.com/bestruirui/octopus/internal/conf.Version=${VERSION}' \

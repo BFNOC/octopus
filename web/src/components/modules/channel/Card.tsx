@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import {
     MorphingDialog,
     MorphingDialogTrigger,
@@ -6,8 +7,9 @@ import {
 } from '@/components/ui/morphing-dialog';
 import { Activity, CheckCircle2, DollarSign, Key, Layers, MessageSquare, XCircle } from 'lucide-react';
 import { type StatsMetricsFormatted } from '@/api/endpoints/stats';
-import { type Channel, useEnableChannel, useProbeChannel } from '@/api/endpoints/channel';
+import { type Channel, useEnableChannel } from '@/api/endpoints/channel';
 import { CardContent } from './CardContent';
+import { ProbeModal } from './ProbeModal';
 import { useTranslations } from 'next-intl';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/animate-ui/components/animate/tooltip';
 import { Switch } from '@/components/ui/switch';
@@ -19,8 +21,8 @@ export function Card({ channel, stats, layout = 'grid' }: { channel: Channel; st
     const tSections = useTranslations('channel.detail.sections');
     const tMetrics = useTranslations('channel.detail.metrics');
     const enableChannel = useEnableChannel();
-    const probeChannel = useProbeChannel();
     const isListLayout = layout === 'list';
+    const [probeOpen, setProbeOpen] = useState(false);
 
     const splitModels = (models: string) =>
         models
@@ -48,21 +50,8 @@ export function Card({ channel, stats, layout = 'grid' }: { channel: Channel; st
         );
     };
 
-    const handleProbe = () => {
-        probeChannel.mutate(channel.id, {
-            onSuccess: (results) => {
-                const supported = results.filter((r) => r.status === 'supported').length;
-                const unsupported = results.filter((r) => r.status === 'unsupported').length;
-                const skipped = results.filter((r) => r.status === 'skipped').length;
-                toast.success(`探活完成: ${supported} 支持, ${unsupported} 不支持, ${skipped} 跳过`);
-            },
-            onError: (error) => {
-                toast.error(error.message);
-            },
-        });
-    };
-
     return (
+        <div className="relative">
         <MorphingDialog>
             <MorphingDialogTrigger className="w-full">
                 <article className="flex flex-col gap-4 rounded-3xl border border-border bg-card text-card-foreground p-4 transition-all duration-300">
@@ -83,15 +72,6 @@ export function Card({ channel, stats, layout = 'grid' }: { channel: Channel; st
                             ) : null}
                         </div>
                         <div className="flex items-center gap-1">
-                            <button
-                                type="button"
-                                onClick={(e) => { e.stopPropagation(); handleProbe(); }}
-                                disabled={probeChannel.isPending}
-                                className="h-8 w-8 p-0 rounded-xl text-muted-foreground hover:text-foreground hover:bg-transparent disabled:opacity-40"
-                                title="探活"
-                            >
-                                <Activity className={`h-4 w-4 ${probeChannel.isPending ? 'animate-spin' : ''}`} />
-                            </button>
                             <Switch
                                 checked={channel.enabled}
                                 onCheckedChange={handleEnableChange}
@@ -191,5 +171,15 @@ export function Card({ channel, stats, layout = 'grid' }: { channel: Channel; st
                 </MorphingDialogContent>
             </MorphingDialogContainer>
         </MorphingDialog>
+        <button
+            type="button"
+            onClick={() => setProbeOpen(true)}
+            className="absolute top-4 right-12 z-10 h-8 w-8 p-0 rounded-xl text-muted-foreground hover:text-foreground hover:bg-transparent"
+            title="探活"
+        >
+            <Activity className="h-4 w-4" />
+        </button>
+        <ProbeModal open={probeOpen} onOpenChange={setProbeOpen} channel={channel} />
+        </div>
     );
 }

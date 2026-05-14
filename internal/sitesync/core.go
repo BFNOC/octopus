@@ -32,6 +32,11 @@ func SyncAccount(ctx context.Context, accountID int) (*model.SiteSyncResult, err
 	}
 
 	snapshot, err := syncAccountState(ctx, siteRecord, account)
+	if err != nil && isAuthError(err) {
+		if _, reloginErr := tryAutoRelogin(ctx, siteRecord, account); reloginErr == nil {
+			snapshot, err = syncAccountState(ctx, siteRecord, account)
+		}
+	}
 	if err != nil {
 		updateErr := updateAccountSyncState(ctx, account.ID, model.SiteExecutionStatusFailed, err.Error(), "")
 		if updateErr != nil {
@@ -77,6 +82,11 @@ func CheckinAccount(ctx context.Context, accountID int) (*model.SiteCheckinResul
 	}
 
 	result, resolvedAccessToken, err := checkinAccountState(ctx, siteRecord, account)
+	if err != nil && isAuthError(err) {
+		if _, reloginErr := tryAutoRelogin(ctx, siteRecord, account); reloginErr == nil {
+			result, resolvedAccessToken, err = checkinAccountState(ctx, siteRecord, account)
+		}
+	}
 	if err != nil {
 		status := model.SiteExecutionStatusFailed
 		lowered := strings.ToLower(err.Error())

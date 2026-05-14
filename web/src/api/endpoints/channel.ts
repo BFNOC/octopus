@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { apiClient } from '../client';
+import { useCallback, useRef, useState } from 'react';
+import { apiClient, API_BASE_URL } from '../client';
 import { logger } from '@/lib/logger';
 import { formatCount, formatMoney, formatTime } from '@/lib/utils';
 import { StatsChannel, type StatsMetricsFormatted } from './stats';
@@ -124,6 +125,7 @@ export type UpdateChannelRequest = {
     channel_proxy?: string | null;
     param_override?: string | null;
     match_regex?: string | null;
+    model_filter_mode?: string;
     // keys diff
     keys_to_add?: Array<Pick<ChannelKey, 'enabled' | 'channel_key' | 'remark'>>;
     keys_to_update?: Array<{ id: number; enabled?: boolean; channel_key?: string; remark?: string }>;
@@ -478,10 +480,11 @@ export type ProbeResult = {
     ttft_ms: number;
     http_status: number;
     error?: string;
+    response_text?: string;
 };
 
 /**
- * 探活渠道 Hook
+ * 探活渠道 Hook（普通 JSON 返回）
  */
 export function useProbeChannel() {
     return useMutation({
@@ -489,6 +492,111 @@ export function useProbeChannel() {
             return apiClient.post<ProbeResult[]>(`/api/v1/channel/${channelId}/probe`);
         },
     });
+}
+
+export type ProbeRequest = {
+    model_names?: string[];
+    prompt?: string;
+    timeout?: number;
+    concurrency?: number;
+    delay_ms?: number;
+    headers?: Record<string, string>;
+};
+
+/**
+ * SSE 流式探活 Hook
+ *
+ * 返回 { probe, results, isProbing, error, reset }
+ * - probe(channelId, request) 启动探活
+ * - results 随流式返回实时更新
+ */
+export function useProbeChannelSSE() {
+    const [results, setResults] = useState<ProbeResult[]>([]);
+    const [isProbing, setIsProbing] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+    const abortRef = useRef<AbortController | null>(null);
+
+    const probe = useCallback(async (channelId: number, req?: ProbeRequest) => {
+        setIsProbing(true);
+        setResults([]);
+        setError(null);
+
+        const controller = new AbortController();
+        abortRef.current = controller;
+
+        try {
+            const token = typeof window !== 'undefined'
+                ? (() => {
+                    try {
+                        const raw = localStorage.getItem('auth-storage');
+                        return raw ? JSON.parse(raw)?.state?.token : null;
+                    } catch { return null; }
+                })()
+                : null;
+
+            const resp = await fetch(`${API_BASE_URL}/api/v1/channel/${channelId}/probe`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'text/event-stream',
+                    ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+                },
+                body: req ? JSON.stringify(req) : undefined,
+                signal: controller.signal,
+            });
+
+            if (!resp.ok) {
+                const text = await resp.text();
+                throw new Error(text || `HTTP ${resp.status}`);
+            }
+
+            const reader = resp.body?.getReader();
+            if (!reader) throw new Error('No response body');
+
+            const decoder = new TextDecoder();
+            let buffer = '';
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+
+                buffer += decoder.decode(value, { stream: true });
+                const lines = buffer.split('\n');
+                buffer = lines.pop() || '';
+
+                for (const line of lines) {
+                    const trimmed = line.trim();
+                    if (!trimmed.startsWith('data: ')) continue;
+                    const data = trimmed.slice(6);
+                    if (data === '[DONE]') continue;
+
+                    try {
+                        const result = JSON.parse(data) as ProbeResult;
+                        setResults(prev => [...prev, result]);
+                    } catch {
+                        // skip malformed lines
+                    }
+                }
+            }
+        } catch (err: unknown) {
+            if (err instanceof DOMException && err.name === 'AbortError') return;
+            setError(err instanceof Error ? err.message : String(err));
+        } finally {
+            setIsProbing(false);
+            abortRef.current = null;
+        }
+    }, []);
+
+    const abort = useCallback(() => {
+        abortRef.current?.abort();
+    }, []);
+
+    const reset = useCallback(() => {
+        setResults([]);
+        setError(null);
+    }, []);
+
+    return { probe, results, isProbing, error, abort, reset };
 }
 
 // ─── Channel Health ────────────────────────────────────────────────────────

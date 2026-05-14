@@ -76,6 +76,7 @@ import {
 } from '@/components/ui/table';
 import { toast } from '@/components/common/Toast';
 import { cn, formatCount, formatMoney } from '@/lib/utils';
+import { ProbeModal } from '@/components/modules/channel/ProbeModal';
 import { getModelIcon } from '@/lib/model-icons';
 import { useSettingStore } from '@/stores/setting';
 import {
@@ -2453,6 +2454,25 @@ function SiteCardImpl({
         }
     }, [card.accounts, syncSiteAccount]);
 
+    const [probeOpen, setProbeOpen] = useState(false);
+    const [probeChannelIds, setProbeChannelIds] = useState<number[]>([]);
+    const handleProbeSite = useCallback(() => {
+        const channelIds = new Set<number>();
+        for (const account of card.accounts) {
+            for (const group of account.groups) {
+                for (const id of group.projected_channel_ids) {
+                    channelIds.add(id);
+                }
+            }
+        }
+        if (channelIds.size === 0) {
+            toast.error('该站点没有已投影的渠道');
+            return;
+        }
+        setProbeChannelIds(Array.from(channelIds));
+        setProbeOpen(true);
+    }, [card.accounts]);
+
     // Stable navigation callbacks. Building these inside SiteCard (rather than
     // inside SiteChannelGrid.renderCard) keeps SiteCard's prop identity stable
     // across grid re-renders, so memo() can actually skip work for cards whose
@@ -2471,6 +2491,7 @@ function SiteCardImpl({
     );
 
     return (
+        <>
         <MorphingDialog>
             <div
                 ref={(node) => registerCardRef(card.site_id, node)}
@@ -2514,7 +2535,7 @@ function SiteCardImpl({
                                     variant="ghost"
                                     className="size-7 rounded-lg"
                                     title="探活"
-                                    onClick={(e) => { e.stopPropagation(); }}
+                                    onClick={(e) => { e.stopPropagation(); handleProbeSite(); }}
                                 >
                                     <Activity className="size-3.5" />
                                 </Button>
@@ -2634,6 +2655,13 @@ function SiteCardImpl({
 
             <SiteCardJumpWatcher jumpRequest={jumpRequest} siteId={card.site_id} />
         </MorphingDialog>
+        <ProbeModal
+            open={probeOpen}
+            onOpenChange={setProbeOpen}
+            channelIds={probeChannelIds}
+            title={`探活 — ${card.site_name}`}
+        />
+        </>
     );
 }
 
