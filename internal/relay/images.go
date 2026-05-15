@@ -225,7 +225,7 @@ func ImagesHandler(endpoint string, c *gin.Context) {
 		// 熔断器：记录失败
 		balancer.RecordFailure(channel.ID, usedKey.ID, item.ModelName, circuitFailureKind(group.RetryEnabled, statusCode))
 
-		if written {
+		if written || c.Writer.Written() {
 			metrics.Save(ctx, false, fwdErr, iter.Attempts())
 			return
 		}
@@ -781,12 +781,12 @@ func proxySSE(ctx context.Context, c *gin.Context, respUp *http.Response, firstT
 		select {
 		case <-ctx.Done():
 			log.Infof("client disconnected, stopping stream")
-			return completedScanner.Usage(), !firstWrite, nil
+			return completedScanner.Usage(), c.Writer.Written(), nil
 
 		case <-firstTokenC:
 			log.Warnf("first token timeout (%ds), switching channel", firstTokenTimeOutSec)
 			_ = respUp.Body.Close()
-			return completedScanner.Usage(), !firstWrite, fmt.Errorf("first token timeout (%ds)", firstTokenTimeOutSec)
+			return completedScanner.Usage(), c.Writer.Written(), fmt.Errorf("first token timeout (%ds)", firstTokenTimeOutSec)
 
 		case <-heartbeatC:
 			if err := writeSSEHeartbeat(c.Writer); err != nil {
@@ -795,13 +795,13 @@ func proxySSE(ctx context.Context, c *gin.Context, respUp *http.Response, firstT
 
 		case r, ok := <-results:
 			if !ok {
-				return completedScanner.Usage(), !firstWrite, nil
+				return completedScanner.Usage(), c.Writer.Written(), nil
 			}
 			if r.eof {
-				return completedScanner.Usage(), !firstWrite, nil
+				return completedScanner.Usage(), c.Writer.Written(), nil
 			}
 			if r.err != nil {
-				return completedScanner.Usage(), !firstWrite, fmt.Errorf("failed to read stream line: %w", r.err)
+				return completedScanner.Usage(), c.Writer.Written(), fmt.Errorf("failed to read stream line: %w", r.err)
 			}
 
 			line := r.line
