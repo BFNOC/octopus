@@ -386,6 +386,44 @@ export type FilteredModel = {
     model_name: string;
 };
 
+export type BatchFilterResult = {
+    channel_id: number;
+    model_filter_mode: string;
+    disabled_models: FilteredModel[];
+    allowed_models: FilteredModel[];
+};
+
+/**
+ * 批量获取渠道过滤配置 Hook
+ */
+export function useBatchChannelFilter(channelIds: number[]) {
+    return useQuery({
+        queryKey: ['channels', 'batch-filter', channelIds],
+        queryFn: async () => {
+            return apiClient.post<BatchFilterResult[]>('/api/v1/channel/filter/batch', {
+                channel_ids: channelIds,
+            });
+        },
+        enabled: channelIds.length > 0,
+    });
+}
+
+/**
+ * 批量更新渠道过滤模型 Hook
+ */
+export function useBatchUpdateChannelFilter() {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: async (data: { channel_id: number; action: 'add' | 'delete' | 'replace'; models: string[]; mode: string }) => {
+            return apiClient.post<null>('/api/v1/channel/filter/batch-update', data);
+        },
+        onSuccess: (_data, variables) => {
+            queryClient.invalidateQueries({ queryKey: ['channels', 'batch-filter'] });
+            queryClient.invalidateQueries({ queryKey: ['channels', 'list'] });
+        },
+    });
+}
+
 /**
  * 获取渠道禁用模型列表 Hook
  */

@@ -120,6 +120,10 @@ func updateChannel(c *gin.Context) {
 		resp.Error(c, http.StatusBadRequest, resp.ErrInvalidJSON)
 		return
 	}
+	// 允许 managed 渠道仅更新 model_filter_mode（模型过滤是用户级操作，不受 managed 限制）
+	if req.ModelFilterMode != nil && isOnlyFilterModeUpdate(&req) {
+		req.BypassManagedCheck = true
+	}
 	channel, err := op.ChannelUpdate(&req, c.Request.Context())
 	if err != nil {
 		resp.Error(c, http.StatusInternalServerError, err.Error())
@@ -191,4 +195,14 @@ func syncChannel(c *gin.Context) {
 func getLastSyncTime(c *gin.Context) {
 	time := task.GetLastSyncModelsTime()
 	resp.Success(c, time)
+}
+
+// isOnlyFilterModeUpdate 判断请求是否仅更新 model_filter_mode（无其他字段变更）
+func isOnlyFilterModeUpdate(req *model.ChannelUpdateRequest) bool {
+	return req.Name == nil && req.Type == nil && req.Enabled == nil &&
+		req.BaseUrls == nil && req.Model == nil && req.CustomModel == nil &&
+		req.Proxy == nil && req.AutoSync == nil && req.AutoGroup == nil &&
+		req.CustomHeader == nil && req.ChannelProxy == nil && req.ParamOverride == nil &&
+		req.MatchRegex == nil &&
+		len(req.KeysToAdd) == 0 && len(req.KeysToUpdate) == 0 && len(req.KeysToDelete) == 0
 }

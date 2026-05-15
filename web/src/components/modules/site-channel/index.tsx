@@ -77,6 +77,7 @@ import {
 import { toast } from '@/components/common/Toast';
 import { cn, formatCount, formatMoney } from '@/lib/utils';
 import { ProbeModal } from '@/components/modules/channel/ProbeModal';
+import { ChannelFilterPanel } from '@/components/modules/channel/ChannelFilterPanel';
 import { getModelIcon } from '@/lib/model-icons';
 import { useSettingStore } from '@/stores/setting';
 import {
@@ -2456,6 +2457,18 @@ function SiteCardImpl({
 
     const [probeOpen, setProbeOpen] = useState(false);
     const [probeChannelIds, setProbeChannelIds] = useState<number[]>([]);
+    const [filterOpen, setFilterOpen] = useState(false);
+    const filterChannelIds = useMemo(() => {
+        const ids = new Set<number>();
+        for (const account of card.accounts) {
+            for (const group of account.groups) {
+                for (const id of group.projected_channel_ids) {
+                    ids.add(id);
+                }
+            }
+        }
+        return Array.from(ids);
+    }, [card.accounts]);
     const handleProbeSite = useCallback(() => {
         const channelIds = new Set<number>();
         for (const account of card.accounts) {
@@ -2545,7 +2558,7 @@ function SiteCardImpl({
                                     variant="ghost"
                                     className="size-7 rounded-lg"
                                     title="过滤"
-                                    onClick={(e) => { e.stopPropagation(); }}
+                                    onClick={(e) => { e.stopPropagation(); setFilterOpen(true); }}
                                 >
                                     <Filter className="size-3.5" />
                                 </Button>
@@ -2660,6 +2673,12 @@ function SiteCardImpl({
             onOpenChange={setProbeOpen}
             channelIds={probeChannelIds}
             title={`探活 — ${card.site_name}`}
+        />
+        <ChannelFilterPanel
+            open={filterOpen}
+            onOpenChange={setFilterOpen}
+            channelIds={filterChannelIds}
+            title={`模型过滤 — ${card.site_name}`}
         />
         </>
     );
