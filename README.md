@@ -377,27 +377,58 @@ Edit `~/.codex/auth.json`
 
 ## 🔀 Differences from Upstream
 
-Compatible with [bestruirui/octopus](https://github.com/bestruirui/octopus), ~180 commits ahead on `dev`.
+Fork chain: [bestruirui/octopus](https://github.com/bestruirui/octopus) (original) → [Hureru/octopus](https://github.com/Hureru/octopus) (upstream) → **BFNOC/octopus** (this fork).
 
-### 🏗️ New subsystems
+### This fork vs Hureru/octopus
+
+Our additions on top of the direct upstream, focused on metapi-origin features and UX improvements.
+
+**New features:**
+
+- **🔍 Channel Filter Panel** — model-level filtering with batch enable/disable, ported from metapi's filter architecture.
+- **🩺 Probe & Tester Enhancement** — enhanced model probing (latency, auto-disable) + multi-protocol tester (OpenAI / Anthropic / Gemini / Responses).
+- **📊 Health Dashboard** — real-time model health, probe results, and circuit breaker status in the web UI.
+- **🧹 Expired Cleanup Task** — background task to purge stale data (probe results, old logs).
+- **🧙 Quick Setup Wizard** — 4-step guided onboarding for first-time setup.
+- **⚡ Early Heartbeat** — SSE heartbeat during relay pre-stage (failover, backoff, slow upstream) to keep clients alive.
+- **🔄 Auto-Update** — download and hot-swap the binary on new releases.
+- **🏷️ Group Management** — 7 new endpoints for group CRUD, member management, and health aggregation.
+
+**Improvements:**
+
+- **Probe system** — sticky probe sessions, configurable concurrency, graceful shutdown.
+- **Toolbar** — search box no longer overlaps adjacent buttons on expand.
+- **Site cards** — quick-action buttons for check-in and sync directly from the card.
+
+> Diff: `git log upstream/dev..HEAD` after adding Hureru/octopus as `upstream`.
+
+### Hureru/octopus vs bestruirui/octopus
+
+Upstream's additions on top of the original project.
+
+**New subsystems:**
 
 - **🌐 Site Management & Site Sync** — full new resource layer (backend `sitesync/` + dedicated frontend modules). Manages aggregator-site accounts: scheduled sync, check-in, balance / today's income, per-site pricing, archive/restore, AnyRouter, route probing, `sub2api`, and projected site channels.
 - **🔌 WebSocket relay** — upstream WS connection pool with health backoff, client-facing WS, and native Responses passthrough for Codex tools.
 - **🖼️ OpenAI Images API forwarding** with body cache.
 - **🩹 Transformer overhaul** — native StreamEvent pipeline across all adapters, Anthropic patching layer, role-alternation normalization, plus a long tail of cross-format fidelity fixes.
 
-### 🛠️ Reworked
+**Reworked:**
 
 - **Channel module** — tabbed Site/Manual layout; group editor preserves channel metadata.
 - **Relay core** — route learning, retry, cancel propagation, Responses compact proxy, log filtering by channel ID.
 - **Auth** — JWT secret persisted in DB (rotation-safe), no longer derived from credentials.
 - **Backup**, **logs** (`Item.tsx` rewrite), and **home charts** redesigned.
 
-### 🧬 Misc
+**Misc:**
 
 - Claude Opus 4.7 adaptive thinking; DB migrations 003–008; new Site Automation panel in Settings.
 
-> Full diff: `git log upstream/dev..HEAD` after adding `https://github.com/bestruirui/octopus` as `upstream`.
+---
+
+## 📂 Docs
+
+- [Upstream Sync Log](docs/SYNC.md) — cherry-pick history, conflict resolutions, skipped commits
 
 ---
 

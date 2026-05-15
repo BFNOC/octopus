@@ -379,27 +379,58 @@ base_url = "http://127.0.0.1:8080/v1"
 
 ## 🔀 与上游的差异
 
-兼容 [bestruirui/octopus](https://github.com/bestruirui/octopus)，`dev` 分支领先约 180 个提交。
+Fork 链路：[bestruirui/octopus](https://github.com/bestruirui/octopus)（最上游）→ [Hureru/octopus](https://github.com/Hureru/octopus)（上游）→ **BFNOC/octopus**（本 fork）。
 
-### 🏗️ 新增子系统
+### 本 fork vs Hureru/octopus
+
+在直接上游基础上的新增功能，侧重 metapi 移植和 UX 优化。
+
+**新功能：**
+
+- **🔍 模型过滤面板** —— 模型级别的过滤与批量启用/禁用，移植自 metapi 的过滤架构。
+- **🩺 探活 & Tester 增强** —— 增强的模型探活（延迟、自动禁用）+ 多协议 Tester（OpenAI / Anthropic / Gemini / Responses）。
+- **📊 健康仪表盘** —— Web UI 实时展示模型健康、探活结果、熔断器状态。
+- **🧹 过期清理任务** —— 后台定时清理过期数据（探活结果、旧日志）。
+- **🧙 快速设置向导** —— 4 步引导式初始化流程。
+- **⚡ 早期心跳** —— Relay 前置阶段（failover、退避、慢上游）的 SSE 心跳，防止客户端断开。
+- **🔄 自动更新** —— 下载新版本并热替换二进制。
+- **🏷️ 分组管理** —— 7 个新端点，支持分组 CRUD、成员管理、健康聚合。
+
+**改进：**
+
+- **探活系统** —— 粘性探活会话、可配置并发、优雅关闭。
+- **工具栏** —— 搜索框展开时不再覆盖相邻按钮。
+- **站点卡片** —— 卡片上直接显示签到和同步的快捷按钮。
+
+> Diff：添加 Hureru/octopus 为 `upstream` 后执行 `git log upstream/dev..HEAD`。
+
+### Hureru/octopus vs bestruirui/octopus
+
+上游在最上游项目基础上的新增功能。
+
+**新增子系统：**
 
 - **🌐 站点管理 & 站点同步** —— 全新资源层（后端 `sitesync/` + 独立前端模块）。管理聚合站点账号：定时同步、自动签到、余额与今日收益、按站点价格、归档/恢复、AnyRouter、路由探测、`sub2api`，以及把账号物化为渠道的 projected site channel。
 - **🔌 WebSocket relay** —— 上游 WS 连接池（带健康退避）、面向客户端的 WS，以及 Codex 工具的原生 Responses 透传。
 - **🖼️ OpenAI Images API 转发**（带 body 缓存）。
 - **🩹 Transformer 大重构** —— 三大适配器统一原生 StreamEvent 流水线、Anthropic patching 层、role 交替规范化，及大量跨格式保真修复。
 
-### 🛠️ 重做
+**重做：**
 
 - **渠道模块** —— Site / Manual Tab 切换；分组编辑器保留渠道元数据。
 - **Relay 内核** —— 路由学习、重试、取消传播、Responses compact proxy、日志按 channel ID 过滤。
 - **认证** —— JWT 密钥持久化到数据库（密码轮换更安全），不再从凭证派生。
 - **备份**、**日志**（`Item.tsx` 重写）、**首页图表** 全部重做。
 
-### 🧬 杂项
+**杂项：**
 
 - 支持 Claude Opus 4.7 adaptive thinking；DB 迁移 003–008；设置页新增 Site Automation 面板。
 
-> 完整 diff：添加上游远端 `https://github.com/bestruirui/octopus` 后执行 `git log upstream/dev..HEAD`。
+---
+
+## 📂 文档
+
+- [上游同步记录](docs/SYNC.md) — cherry-pick 历史、冲突解决、跳过的 commit
 
 ---
 
