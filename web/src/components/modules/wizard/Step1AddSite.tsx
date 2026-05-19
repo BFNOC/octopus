@@ -13,7 +13,7 @@ import {
     SelectValue,
 } from '@/components/ui/select';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { useCreateSite, useCreateSiteAccount, useDetectSitePlatform, SitePlatform, SiteCredentialType } from '@/api/endpoints/site';
+import { useCreateSite, useCreateSiteAccount, useDetectSitePlatform, useSiteList, SitePlatform, SiteCredentialType } from '@/api/endpoints/site';
 import { useWizardStore } from './store';
 
 const PLATFORM_OPTIONS = [
@@ -36,14 +36,12 @@ const CREDENTIAL_LABELS: Record<SiteCredentialType, string> = {
 
 function defaultCredentialType(platform: SitePlatform): SiteCredentialType {
     switch (platform) {
-        case SitePlatform.Sub2API:
-            return SiteCredentialType.AccessToken;
         case SitePlatform.OpenAI:
         case SitePlatform.Claude:
         case SitePlatform.Gemini:
             return SiteCredentialType.APIKey;
         default:
-            return SiteCredentialType.UsernamePassword;
+            return SiteCredentialType.AccessToken;
     }
 }
 
@@ -52,6 +50,7 @@ export function Step1AddSite() {
     const createSite = useCreateSite();
     const createAccount = useCreateSiteAccount();
     const detectPlatform = useDetectSitePlatform();
+    const { data: existingSites, isLoading: isSitesLoading } = useSiteList();
 
     const [name, setName] = useState('');
     const [baseUrl, setBaseUrl] = useState('');
@@ -87,6 +86,12 @@ export function Step1AddSite() {
                 toast.error('无法自动检测平台类型，请手动选择');
                 return;
             }
+        }
+
+        const trimmedName = name.trim();
+        if (existingSites?.some((s) => s.name === trimmedName)) {
+            toast.error(`站点「${trimmedName}」已存在，请使用其他名称或前往站点管理页面编辑`);
+            return;
         }
 
         setSubmitting(true);
@@ -134,8 +139,11 @@ export function Step1AddSite() {
 
             toast.success('站点和账号已创建');
             setStep(2);
-        } catch (err) {
-            toast.error(err instanceof Error ? err.message : '创建失败');
+        } catch (err: unknown) {
+            const message = (err && typeof err === 'object' && 'message' in err && typeof err.message === 'string')
+                ? err.message
+                : '创建失败';
+            toast.error(message);
         } finally {
             setSubmitting(false);
         }
@@ -209,7 +217,7 @@ export function Step1AddSite() {
                     </Label>
 
                     <div className="flex justify-end pt-2">
-                        <Button type="submit" className="rounded-xl" disabled={submitting}>
+                        <Button type="submit" className="rounded-xl" disabled={submitting || isSitesLoading}>
                             {submitting ? '创建中...' : '创建站点并继续'}
                         </Button>
                     </div>
