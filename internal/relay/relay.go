@@ -27,7 +27,6 @@ import (
 	openaiOutbound "github.com/bestruirui/octopus/internal/transformer/outbound/openai"
 	"github.com/bestruirui/octopus/internal/utils/log"
 	"github.com/bestruirui/octopus/internal/utils/safe"
-	"github.com/coder/websocket"
 	"github.com/gin-gonic/gin"
 	"github.com/tmaxmax/go-sse"
 )
@@ -131,6 +130,8 @@ func Handler(inboundType inbound.InboundType, c *gin.Context) {
 		metrics:         metrics,
 		apiKeyID:        apiKeyID,
 		requestModel:    requestModel,
+		groupID:         group.ID,
+		groupSessionTTL: group.SessionKeepTime,
 		iter:            iter,
 		rawBody:         rawBody,
 		heartbeat:       hb,
@@ -151,7 +152,7 @@ func Handler(inboundType inbound.InboundType, c *gin.Context) {
 	for iter.Next() {
 		select {
 		case <-c.Request.Context().Done():
-			log.Infof("request context canceled, stopping retry")
+			log.Debugf("request context canceled, stopping retry")
 			metrics.Save(c.Request.Context(), false, context.Canceled, iter.Attempts())
 			return
 		default:
@@ -205,7 +206,7 @@ func Handler(inboundType inbound.InboundType, c *gin.Context) {
 		// 设置实际模型
 		internalRequest.Model = item.ModelName
 
-		log.Infof("request model %s, mode: %d, forwarding to channel: %s model: %s (attempt %d/%d, sticky=%t)",
+		log.Debugf("request model %s, mode: %d, forwarding to channel: %s model: %s (attempt %d/%d, sticky=%t)",
 			requestModel, group.Mode, channel.Name, item.ModelName,
 			iter.Index()+1, iter.Len(), iter.IsSticky())
 
@@ -242,7 +243,7 @@ func Handler(inboundType inbound.InboundType, c *gin.Context) {
 					retryNum, maxSameChannelRetries, channel.Name, delay)
 				select {
 				case <-c.Request.Context().Done():
-					log.Infof("request context canceled during retry backoff")
+					log.Debugf("request context canceled during retry backoff")
 					metrics.Save(c.Request.Context(), false, context.Canceled, iter.Attempts())
 					return
 				case <-time.After(delay):
@@ -520,7 +521,7 @@ func parseRequest(inboundType inbound.InboundType, c *gin.Context) ([]byte, *mod
 func (ra *relayAttempt) forward() (int, error) {
 	ctx := ra.requestContext()
 
-	// 尝试上游 WebSocket（仅 OpenAI Response outbound 类型）
+	// 尝试上游 WebSocket（仅 OpenAI Response outbound 类型；必须是客户端 WS 入站且新开关显式启用）
 	if ra.channel.Type == outbound.OutboundTypeOpenAIResponse &&
 		ra.internalRequest.RawAPIFormat == model.APIFormatOpenAIResponse {
 
@@ -529,15 +530,13 @@ func (ra *relayAttempt) forward() (int, error) {
 			shouldTryWS = false
 		} else if ra.internalRequest.IsOpenAIExactReplayRequest() {
 			shouldTryWS = false
-		} else {
-			wsUpgradeEnabled, _ := op.SettingGetBool(dbmodel.SettingKeyRelayWSUpgradeEnabled)
-			if wsUpgradeEnabled {
-				// 设置启用：无论客户端协议都主动尝试 WS 上游
-				shouldTryWS = true
-			} else {
-				// 设置禁用：仅当客户端也是 WS 时才尝试 WS 上游
-				shouldTryWS = (ra.c == nil)
-			}
+		} else if ra.c == nil {
+			wsMode := effectiveResponsesWSMode(ra.channel)
+			shouldTryWS = shouldEnableResponsesWS(ra.channel) && wsMode != responsesWSModeOff
+		} else if requiresUpstreamWSContinuation(ra.internalRequest) {
+			// Safety: HTTP ingress must not proactively use upstream WS for fresh requests,
+			// but an explicit continuation cannot be safely failovered as ordinary HTTP.
+			shouldTryWS = true
 		}
 
 		if shouldTryWS {
@@ -560,14 +559,21 @@ func (ra *relayAttempt) forward() (int, error) {
 // forwardViaWS attempts to forward via upstream WebSocket.
 // Returns statusCode=-1 if WS is not available (caller should fall through to HTTP).
 func (ra *relayAttempt) forwardViaWS(ctx context.Context) (int, error) {
+	if ra.c == nil && effectiveResponsesWSMode(ra.channel) == responsesWSModePassthrough && !ra.internalRequest.IsOpenAIExactReplayRequest() {
+		return ra.forwardViaWSPassthrough(ctx)
+	}
 	continuation := requiresUpstreamWSContinuation(ra.internalRequest)
-	pc := TryUpstreamWS(ctx, ra.channel, ra.channel.GetBaseUrl(), ra.usedKey.ChannelKey, ra.usedKey.ID, ra.clientRequestHeaders())
+	preferredConnID := ""
+	if continuation {
+		preferredConnID, _ = getWSResponseConn(currentPreviousResponseID(ra.internalRequest))
+	}
+	pc := TryUpstreamWSWithPreference(ctx, ra.channel, ra.channel.GetBaseUrl(), ra.usedKey.ChannelKey, ra.usedKey.ID, ra.clientRequestHeaders(), preferredConnID)
 	if pc == nil {
 		log.Debugf("upstream WS unavailable for channel %s (key=%d, continuation=%t)", ra.channel.Name, ra.usedKey.ID, continuation)
 		return -1, nil // WS not available
 	}
 
-	log.Infof("using upstream WebSocket for channel %s (key=%d)", ra.channel.Name, ra.usedKey.ID)
+	log.Debugf("using upstream WebSocket for channel %s (key=%d)", ra.channel.Name, ra.usedKey.ID)
 	log.Debugf("upstream WS selected (channel=%s, key=%d, continuation=%t, previous_response_id=%s)",
 		ra.channel.Name, ra.usedKey.ID, continuation, currentPreviousResponseID(ra.internalRequest))
 
@@ -585,8 +591,7 @@ func (ra *relayAttempt) forwardViaWS(ctx context.Context) (int, error) {
 		log.Warnf("upstream WS send failed for channel %s: %v", ra.channel.Name, err)
 		log.Debugf("upstream WS send failed before stream start (channel=%s, key=%d, continuation=%t, err=%v)",
 			ra.channel.Name, ra.usedKey.ID, continuation, err)
-		pc.conn.Close(websocket.StatusGoingAway, "send failed")
-		wsUpstreamPool.Remove(pc.poolKey)
+		wsUpstreamPool.RemoveConn(pc)
 		if isUpstreamWSConnectionBroken(err) {
 			log.Debugf("upstream WS send failure eligible for redial (channel=%s, key=%d, continuation=%t)",
 				ra.channel.Name, ra.usedKey.ID, continuation)
@@ -605,6 +610,7 @@ func (ra *relayAttempt) forwardViaWS(ctx context.Context) (int, error) {
 
 	// Read events from WS and process through the transform pipeline
 	ra.metrics.UsedWS = true
+	ra.metrics.SetWSExecMode(dbmodel.RelayLogWSExecModeTransform)
 	if ra.metrics.WSMode == nil {
 		ra.metrics.SetWSMode(defaultWSModeForRequest(ra.internalRequest))
 	}
@@ -634,6 +640,7 @@ func (ra *relayAttempt) forwardViaWS(ctx context.Context) (int, error) {
 
 	reader.Close()
 	wsUpstreamPool.RecordWSSuccess(ra.channel.ID)
+	ra.recordSuccessfulWSAffinity(pc)
 	return 200, nil
 }
 
@@ -650,8 +657,7 @@ func (ra *relayAttempt) retryViaFreshUpstreamWS(ctx context.Context, reqBody []b
 	if retryErr != nil {
 		log.Warnf("upstream WS redial send failed for channel %s: %v", ra.channel.Name, retryErr)
 		log.Debugf("fresh upstream WS redial send failed (channel=%s, key=%d, err=%v)", ra.channel.Name, ra.usedKey.ID, retryErr)
-		redialed.conn.Close(websocket.StatusGoingAway, "send failed after redial")
-		wsUpstreamPool.Remove(redialed.poolKey)
+		wsUpstreamPool.RemoveConn(redialed)
 		wsUpstreamPool.RecordWSFailure(ra.channel.ID)
 		if requiresUpstreamWSContinuation(ra.internalRequest) {
 			balancer.DeleteSticky(ra.apiKeyID, ra.requestModel)
@@ -661,6 +667,7 @@ func (ra *relayAttempt) retryViaFreshUpstreamWS(ctx context.Context, reqBody []b
 	}
 
 	ra.metrics.UsedWS = true
+	ra.metrics.SetWSExecMode(dbmodel.RelayLogWSExecModeTransform)
 	if ra.metrics.WSMode == nil {
 		ra.metrics.SetWSMode(defaultWSModeForRequest(ra.internalRequest))
 	}
@@ -684,6 +691,7 @@ func (ra *relayAttempt) retryViaFreshUpstreamWS(ctx context.Context, reqBody []b
 		ra.channel.Name, ra.usedKey.ID, currentPreviousResponseID(ra.internalRequest))
 	reader.Close()
 	wsUpstreamPool.RecordWSSuccess(ra.channel.ID)
+	ra.recordSuccessfulWSAffinity(redialed)
 	return http.StatusOK, nil, true
 }
 
@@ -756,7 +764,7 @@ func (ra *relayAttempt) handleWSStreamResponse(ctx context.Context, reader *wsUp
 			if isLocalRelayBudgetExceeded(ctx, contextError(ctx)) {
 				return contextError(ctx)
 			}
-			log.Infof("client disconnected during ws stream")
+			log.Debugf("client disconnected during ws stream")
 			return nil
 		case <-firstTokenC:
 			log.Warnf("first token timeout (%ds) on ws stream, switching channel", ra.firstTokenTimeOutSec)
@@ -770,7 +778,7 @@ func (ra *relayAttempt) handleWSStreamResponse(ctx context.Context, reader *wsUp
 				if firstToken {
 					return fmt.Errorf("ws stream ended before first event")
 				}
-				log.Infof("ws stream end")
+				log.Debugf("ws stream end")
 				return nil
 			}
 			if r.err != nil {
@@ -778,7 +786,7 @@ func (ra *relayAttempt) handleWSStreamResponse(ctx context.Context, reader *wsUp
 					if firstToken {
 						return fmt.Errorf("ws stream ended before first event")
 					}
-					log.Infof("ws stream end")
+					log.Debugf("ws stream end")
 					return nil
 				}
 				return fmt.Errorf("ws stream read error: %w", r.err)
@@ -805,8 +813,12 @@ func (ra *relayAttempt) handleWSStreamResponse(ctx context.Context, reader *wsUp
 				}
 			}
 
-			ra.streamPayloadWritten.Store(true)
-			writer.Write(data)
+			if _, writeErr := writer.Write(data); writeErr != nil {
+				return writeErr
+			}
+			if writer.Written() {
+				ra.streamPayloadWritten.Store(true)
+			}
 			writer.Flush()
 		}
 	}
@@ -834,8 +846,8 @@ func (ra *relayAttempt) forwardViaHTTP(ctx context.Context) (int, error) {
 		log.Warnf("failed to create request: %v", err)
 		return 0, fmt.Errorf("failed to create request: %w", err)
 	}
-	if requestBody, readErr := readOutboundRequestBody(outboundRequest); readErr == nil {
-		ra.metrics.SetTransportRequestPayload(requestBody, ra.internalRequest.Model)
+	if err := ra.applyParamOverride(outboundRequest); err != nil {
+		return 0, err
 	}
 
 	// 应用 ParamOverride 到请求体
@@ -942,6 +954,17 @@ func (ra *relayAttempt) getStreamWriter() StreamWriter {
 	return ra.c.Writer
 }
 
+// applyParamOverride merges channel-level JSON request overrides and records the final upstream payload.
+func (ra *relayAttempt) applyParamOverride(outboundRequest *http.Request) error {
+	if err := helper.ApplyParamOverride(outboundRequest, ra.channel.ParamOverride); err != nil {
+		return err
+	}
+	if requestBody, readErr := readOutboundRequestBody(outboundRequest); readErr == nil {
+		ra.metrics.SetTransportRequestPayload(requestBody, ra.internalRequest.Model)
+	}
+	return nil
+}
+
 // copyHeaders 复制请求头，过滤 hop-by-hop 头
 func (ra *relayAttempt) copyHeaders(outboundRequest *http.Request) {
 	if ra.c != nil {
@@ -966,6 +989,9 @@ func (ra *relayAttempt) copyHeaders(outboundRequest *http.Request) {
 				outboundRequest.Header.Set(key, value)
 			}
 		}
+	}
+	if outboundRequest.Header.Get("User-Agent") == "" {
+		outboundRequest.Header.Set("User-Agent", "")
 	}
 	if len(ra.channel.CustomHeader) > 0 {
 		for _, header := range ra.channel.CustomHeader {
@@ -996,7 +1022,7 @@ func mergeBetaHeader(existing, incoming string) string {
 
 // sendRequest 发送 HTTP 请求
 func (ra *relayAttempt) sendRequest(req *http.Request) (*http.Response, error) {
-	httpClient, err := helper.ChannelHttpClient(ra.channel)
+	httpClient, err := helper.ChannelHTTPClientWithContext(req.Context(), ra.channel)
 	if err != nil {
 		log.Warnf("failed to get http client: %v", err)
 		return nil, err
@@ -1076,7 +1102,7 @@ func (ra *relayAttempt) handleStreamResponse(ctx context.Context, response *http
 			if isLocalRelayBudgetExceeded(ctx, err) {
 				return err
 			}
-			log.Infof("client disconnected, stopping stream: written=%t first_token_seen=%t elapsed=%s", ra.streamPayloadWritten.Load(), !firstToken, time.Since(ra.metrics.StartTime))
+			log.Debugf("client disconnected, stopping stream: written=%t first_token_seen=%t elapsed=%s", ra.streamPayloadWritten.Load(), !firstToken, time.Since(ra.metrics.StartTime))
 			return err
 		case <-firstTokenC:
 			log.Warnf("first token timeout (%ds), switching channel", ra.firstTokenTimeOutSec)
@@ -1088,7 +1114,7 @@ func (ra *relayAttempt) handleStreamResponse(ctx context.Context, response *http
 			}
 		case r, ok := <-results:
 			if !ok {
-				log.Infof("stream end")
+				log.Debugf("stream end")
 				return nil
 			}
 			if r.err != nil {
@@ -1289,8 +1315,8 @@ func (ra *relayAttempt) forwardViaHTTPPassthroughOpenAIResponses(ctx context.Con
 		return 0, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	if requestBody, readErr := readOutboundRequestBody(outboundRequest); readErr == nil {
-		ra.metrics.SetTransportRequestPayload(requestBody, ra.internalRequest.Model)
+	if err := ra.applyParamOverride(outboundRequest); err != nil {
+		return 0, err
 	}
 	ra.copyHeaders(outboundRequest)
 	outboundRequest.Header.Set("Content-Type", "application/json")
@@ -1386,7 +1412,7 @@ func (ra *relayAttempt) handleStreamResponsePassthroughOpenAIResponses(ctx conte
 			if isLocalRelayBudgetExceeded(ctx, err) {
 				return err
 			}
-			log.Infof("client disconnected, stopping stream: written=%t raw_bytes=%d first_token_seen=%t elapsed=%s", ra.streamPayloadWritten.Load(), rawStream.Len(), !firstToken, time.Since(ra.metrics.StartTime))
+			log.Debugf("client disconnected, stopping stream: written=%t raw_bytes=%d first_token_seen=%t elapsed=%s", ra.streamPayloadWritten.Load(), rawStream.Len(), !firstToken, time.Since(ra.metrics.StartTime))
 			if rawStream.Len() > 0 {
 				ra.collectOpenAIResponsesPassthroughMetrics(context.Background(), rawStream.Bytes())
 			}
@@ -1402,13 +1428,13 @@ func (ra *relayAttempt) handleStreamResponsePassthroughOpenAIResponses(ctx conte
 		case r, ok := <-results:
 			if !ok {
 				ra.collectOpenAIResponsesPassthroughMetrics(ctx, rawStream.Bytes())
-				log.Infof("stream end")
+				log.Debugf("stream end")
 				return nil
 			}
 			if r.err != nil {
 				if r.err == io.EOF {
 					ra.collectOpenAIResponsesPassthroughMetrics(ctx, rawStream.Bytes())
-					log.Infof("stream end")
+					log.Debugf("stream end")
 					return nil
 				}
 				log.Warnf("failed to read event: %v", r.err)
@@ -1519,8 +1545,8 @@ func (ra *relayAttempt) forwardViaHTTPPassthroughAnthropic(ctx context.Context) 
 	}
 
 	// 记录实际上行 payload；直通路径会在这里把顶层 model 改写成命中的上游模型。
-	if requestBody, readErr := readOutboundRequestBody(outboundRequest); readErr == nil {
-		ra.metrics.SetTransportRequestPayload(requestBody, ra.internalRequest.Model)
+	if err := ra.applyParamOverride(outboundRequest); err != nil {
+		return 0, err
 	}
 
 	// 复制客户端请求头（hop-by-hop 过滤保证 x-api-key/authorization/host/content-length
@@ -1571,8 +1597,8 @@ func (ra *relayAttempt) forwardViaHTTPStandard(ctx context.Context) (int, error)
 		log.Warnf("failed to create request: %v", err)
 		return 0, fmt.Errorf("failed to create request: %w", err)
 	}
-	if requestBody, readErr := readOutboundRequestBody(outboundRequest); readErr == nil {
-		ra.metrics.SetTransportRequestPayload(requestBody, ra.internalRequest.Model)
+	if err := ra.applyParamOverride(outboundRequest); err != nil {
+		return 0, err
 	}
 	ra.copyHeaders(outboundRequest)
 
@@ -1671,7 +1697,7 @@ func (ra *relayAttempt) handleStreamResponsePassthroughAnthropic(ctx context.Con
 			if isLocalRelayBudgetExceeded(ctx, err) {
 				return err
 			}
-			log.Infof("client disconnected, stopping stream: written=%t raw_bytes=%d first_token_seen=%t elapsed=%s", ra.streamPayloadWritten.Load(), rawStream.Len(), !firstToken, time.Since(ra.metrics.StartTime))
+			log.Debugf("client disconnected, stopping stream: written=%t raw_bytes=%d first_token_seen=%t elapsed=%s", ra.streamPayloadWritten.Load(), rawStream.Len(), !firstToken, time.Since(ra.metrics.StartTime))
 			if rawStream.Len() > 0 {
 				ra.collectAnthropicPassthroughMetrics(context.Background(), rawStream.Bytes())
 				ra.collectResponse()
@@ -1689,14 +1715,14 @@ func (ra *relayAttempt) handleStreamResponsePassthroughAnthropic(ctx context.Con
 			if !ok {
 				ra.collectAnthropicPassthroughMetrics(ctx, rawStream.Bytes())
 				ra.collectResponse()
-				log.Infof("stream end")
+				log.Debugf("stream end")
 				return nil
 			}
 			if r.err != nil {
 				if r.err == io.EOF {
 					ra.collectAnthropicPassthroughMetrics(ctx, rawStream.Bytes())
 					ra.collectResponse()
-					log.Infof("stream end")
+					log.Debugf("stream end")
 					return nil
 				}
 				log.Warnf("failed to read event: %v", r.err)

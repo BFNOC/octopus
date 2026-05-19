@@ -65,6 +65,7 @@ func InitDB(dbType, dsn string, debug bool) error {
 		&model.User{},
 		&model.Channel{},
 		&model.ChannelKey{},
+		&model.ProxyConfiguration{},
 		&model.Site{},
 		&model.SiteAccount{},
 		&model.SiteToken{},
@@ -91,6 +92,7 @@ func InitDB(dbType, dsn string, debug bool) error {
 		&model.ChannelAllowedModel{},
 		&model.ModelProbeResult{},
 		&model.GroupDecisionSnapshot{},
+		&model.WSResponseAffinity{},
 		&migrate.MigrationRecord{},
 	); err != nil {
 		return err

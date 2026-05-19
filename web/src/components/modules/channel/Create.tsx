@@ -7,6 +7,7 @@ import {
 } from '@/components/ui/morphing-dialog';
 import { useCreateChannel, ChannelType, AutoGroupType } from '@/api/endpoints/channel';
 import { useTranslations } from 'next-intl';
+import { toast } from '@/components/common/Toast';
 import { ChannelForm, type ChannelFormData } from './Form';
 
 export function CreateDialogContent() {
@@ -17,7 +18,9 @@ export function CreateDialogContent() {
         type: ChannelType.OpenAIChat,
         base_urls: [{ url: '', delay: 0 }],
         custom_header: [],
-        channel_proxy: '',
+        ws_mode: 'inherit',
+        proxy_mode: 'direct',
+        proxy_config_id: null,
         param_override: '',
         keys: [{ enabled: true, channel_key: '', remark: '' }],
         model: '',
@@ -25,11 +28,11 @@ export function CreateDialogContent() {
         auto_sync: false,
         auto_group: AutoGroupType.None,
         enabled: true,
-        proxy: false,
         match_regex: '',
         model_filter_mode: 'none',
     });
     const t = useTranslations('channel.create');
+    const tProxy = useTranslations('proxyPool');
 
     const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
         event.preventDefault();
@@ -44,8 +47,11 @@ export function CreateDialogContent() {
             .map((h) => ({ header_key: h.header_key.trim(), header_value: h.header_value }))
             .filter((h) => h.header_key && h.header_value !== '');
 
-        const channelProxy = formData.channel_proxy.trim();
         const paramOverride = formData.param_override.trim();
+        if (formData.proxy_mode === 'pool' && !formData.proxy_config_id) {
+            toast.error(tProxy('selectRequired'));
+            return;
+        }
         createChannel.mutate(
             {
                 name: formData.name,
@@ -55,11 +61,12 @@ export function CreateDialogContent() {
                 keys: normalizedKeys,
                 model: formData.model,
                 custom_model: formData.custom_model,
-                proxy: formData.proxy,
+                proxy_mode: formData.proxy_mode,
+                proxy_config_id: formData.proxy_mode === 'pool' ? formData.proxy_config_id : null,
                 auto_sync: formData.auto_sync,
                 auto_group: formData.auto_group,
                 custom_header: normalizedHeaders,
-                channel_proxy: channelProxy,
+                ws_mode: formData.ws_mode,
                 param_override: paramOverride,
                 match_regex: formData.match_regex.trim(),
             },
@@ -70,7 +77,9 @@ export function CreateDialogContent() {
                         type: ChannelType.OpenAIChat,
                         base_urls: [{ url: '', delay: 0 }],
                         custom_header: [],
-                        channel_proxy: '',
+                        ws_mode: 'inherit',
+                        proxy_mode: 'direct',
+                        proxy_config_id: null,
                         param_override: '',
                         keys: [{ enabled: true, channel_key: '', remark: '' }],
                         model: '',
@@ -78,7 +87,6 @@ export function CreateDialogContent() {
                         auto_sync: false,
                         auto_group: AutoGroupType.None,
                         enabled: true,
-                        proxy: false,
                         match_regex: '',
                         model_filter_mode: 'none',
                     });

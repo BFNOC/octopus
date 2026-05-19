@@ -1,6 +1,8 @@
 package model
 
 import (
+	"encoding/json"
+
 	"github.com/bestruirui/octopus/internal/transformer/outbound"
 )
 
@@ -13,6 +15,24 @@ const (
 	AutoGroupTypeRegex AutoGroupType = 3 //正则匹配
 )
 
+type ChannelWSMode string
+
+const (
+	ChannelWSModeInherit     ChannelWSMode = "inherit"
+	ChannelWSModeOff         ChannelWSMode = "off"
+	ChannelWSModePassthrough ChannelWSMode = "passthrough"
+	ChannelWSModeTransform   ChannelWSMode = "transform"
+)
+
+func (m ChannelWSMode) Normalize() ChannelWSMode {
+	switch m {
+	case ChannelWSModeOff, ChannelWSModePassthrough, ChannelWSModeTransform:
+		return m
+	default:
+		return ChannelWSModeInherit
+	}
+}
+
 type Channel struct {
 	ID            int                   `json:"id" gorm:"primaryKey"`
 	Name          string                `json:"name" gorm:"unique;not null"`
@@ -22,17 +42,39 @@ type Channel struct {
 	Keys          []ChannelKey          `json:"keys" gorm:"foreignKey:ChannelID"`
 	Model         string                `json:"model"`
 	CustomModel   string                `json:"custom_model"`
-	Proxy         bool                  `json:"proxy" gorm:"default:false"`
+	ProxyMode     ProxyUsageMode        `json:"proxy_mode" gorm:"type:varchar(16);not null;default:'direct'"`
+	ProxyConfigID *int                  `json:"proxy_config_id"`
+	Proxy         bool                  `json:"-" gorm:"default:false"`
 	AutoSync      bool                  `json:"auto_sync" gorm:"default:false"`
 	AutoGroup     AutoGroupType         `json:"auto_group" gorm:"default:0"`
 	CustomHeader  []CustomHeader        `json:"custom_header" gorm:"serializer:json"`
+	WSMode        ChannelWSMode         `json:"ws_mode" gorm:"type:varchar(16);not null;default:'inherit'"`
 	ParamOverride *string               `json:"param_override"`
-	ChannelProxy  *string               `json:"channel_proxy"`
+	ChannelProxy  *string               `json:"-" gorm:"column:channel_proxy"`
 	Stats         *StatsChannel         `json:"stats,omitempty" gorm:"foreignKey:ChannelID"`
 	MatchRegex      *string               `json:"match_regex"`
 	ModelFilterMode string                `json:"model_filter_mode" gorm:"default:none"`
 	Managed         bool                  `json:"managed" gorm:"-"`
 	ManagedSource *ManagedChannelSource `json:"managed_source,omitempty" gorm:"-"`
+}
+
+func (c *Channel) UnmarshalJSON(data []byte) error {
+	type alias Channel
+	aux := struct {
+		*alias
+		Proxy        *bool   `json:"proxy"`
+		ChannelProxy *string `json:"channel_proxy"`
+	}{alias: (*alias)(c)}
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+	if aux.Proxy != nil {
+		c.Proxy = *aux.Proxy
+	}
+	if aux.ChannelProxy != nil {
+		c.ChannelProxy = aux.ChannelProxy
+	}
+	return nil
 }
 
 type ManagedChannelSource struct {
@@ -77,11 +119,14 @@ type ChannelUpdateRequest struct {
 	BaseUrls      *[]BaseUrl             `json:"base_urls,omitempty"`
 	Model         *string                `json:"model,omitempty"`
 	CustomModel   *string                `json:"custom_model,omitempty"`
-	Proxy         *bool                  `json:"proxy,omitempty"`
+	ProxyMode     *ProxyUsageMode        `json:"proxy_mode,omitempty"`
+	ProxyConfigID *int                   `json:"proxy_config_id,omitempty"`
+	Proxy         *bool                  `json:"-"`
 	AutoSync      *bool                  `json:"auto_sync,omitempty"`
 	AutoGroup     *AutoGroupType         `json:"auto_group,omitempty"`
 	CustomHeader  *[]CustomHeader        `json:"custom_header,omitempty"`
-	ChannelProxy  *string                `json:"channel_proxy,omitempty"`
+	WSMode        *ChannelWSMode         `json:"ws_mode,omitempty"`
+	ChannelProxy  *string                `json:"-"`
 	ParamOverride *string                `json:"param_override,omitempty"`
 	MatchRegex       *string                `json:"match_regex,omitempty"`
 	ModelFilterMode  *string                `json:"model_filter_mode,omitempty"`
@@ -108,10 +153,11 @@ type ChannelKeyUpdateRequest struct {
 
 // ChannelFetchModelRequest is used by /channel/fetch-model (not persisted).
 type ChannelFetchModelRequest struct {
-	Type    outbound.OutboundType `json:"type" binding:"required"`
-	BaseURL string                `json:"base_url" binding:"required"`
-	Key     string                `json:"key" binding:"required"`
-	Proxy   bool                  `json:"proxy"`
+	Type          outbound.OutboundType `json:"type" binding:"required"`
+	BaseURL       string                `json:"base_url" binding:"required"`
+	Key           string                `json:"key" binding:"required"`
+	ProxyMode     ProxyUsageMode        `json:"proxy_mode"`
+	ProxyConfigID *int                  `json:"proxy_config_id"`
 }
 
 func (c *Channel) GetBaseUrl() string {

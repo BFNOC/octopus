@@ -6,6 +6,7 @@ import (
 	"maps"
 	"time"
 
+	"github.com/bestruirui/octopus/internal/conf"
 	"github.com/bestruirui/octopus/internal/model"
 	"github.com/bestruirui/octopus/internal/op"
 	"github.com/bestruirui/octopus/internal/price"
@@ -33,6 +34,7 @@ type RelayMetrics struct {
 	Stats             model.StatsMetrics
 	UsedWS            bool
 	WSMode            *model.RelayLogWSMode
+	WSExecMode        *model.RelayLogWSExecMode
 	WSRecovery        *model.RelayLogWSRecovery
 	SelectedChannelID int
 
@@ -72,6 +74,13 @@ func (m *RelayMetrics) SetWSMode(mode model.RelayLogWSMode) {
 		return
 	}
 	m.WSMode = wsModePtr(mode)
+}
+
+func (m *RelayMetrics) SetWSExecMode(mode model.RelayLogWSExecMode) {
+	if mode == "" {
+		return
+	}
+	m.WSExecMode = wsExecModePtr(mode)
 }
 
 func (m *RelayMetrics) SetWSRecovery(recovery model.RelayLogWSRecovery) {
@@ -139,11 +148,28 @@ func (m *RelayMetrics) Save(ctx context.Context, success bool, err error, attemp
 	op.StatsChannelUpdate(channelID, globalStats)
 	op.StatsSiteModelHourlyRecordAttempts(attempts, m.ActualModel)
 
-	log.Infof("relay complete: model=%s, channel=%d(%s), success=%t, duration=%dms, input_token=%d, output_token=%d, input_cost=%f, output_cost=%f, total_cost=%f, attempts=%d",
-		m.RequestModel, channelID, channelName, success, duration.Milliseconds(),
-		m.Stats.InputToken, m.Stats.OutputToken,
-		m.Stats.InputCost, m.Stats.OutputCost, m.Stats.InputCost+m.Stats.OutputCost,
-		len(attempts))
+	if conf.AppConfig.Log.Relay.Summary || !success {
+		fields := []interface{}{
+			"model", m.RequestModel,
+			"actual_model", m.ActualModel,
+			"channel_id", channelID,
+			"channel", channelName,
+			"success", success,
+			"duration_ms", duration.Milliseconds(),
+			"input_token", m.Stats.InputToken,
+			"output_token", m.Stats.OutputToken,
+			"input_cost", m.Stats.InputCost,
+			"output_cost", m.Stats.OutputCost,
+			"total_cost", m.Stats.InputCost + m.Stats.OutputCost,
+			"attempts", len(attempts),
+			"ws", m.UsedWS,
+		}
+		if success {
+			log.Infow("relay.complete", fields...)
+		} else {
+			log.Warnw("relay.complete", fields...)
+		}
+	}
 
 	m.saveLog(ctx, err, duration, attempts, channelID, channelName)
 }
@@ -202,6 +228,7 @@ func (m *RelayMetrics) saveLog(ctx context.Context, err error, duration time.Dur
 	relayLog.CacheReadTokens = m.CacheReadTokens
 	relayLog.CacheWriteTokens = m.CacheWriteTokens
 	relayLog.WSMode = m.WSMode
+	relayLog.WSExecMode = m.WSExecMode
 	relayLog.WSRecovery = m.WSRecovery
 
 	// 请求内容：优先原始请求体，保留 provider 专有字段（如 Anthropic cache_control）
@@ -272,6 +299,10 @@ func resolveModelPrice(channelID int, actualModel string) *model.LLMPrice {
 }
 
 func wsModePtr(value model.RelayLogWSMode) *model.RelayLogWSMode {
+	return &value
+}
+
+func wsExecModePtr(value model.RelayLogWSExecMode) *model.RelayLogWSExecMode {
 	return &value
 }
 

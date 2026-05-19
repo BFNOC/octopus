@@ -137,7 +137,11 @@
             "partial": "{count} 部分可用",
             "failed": "{count} 失敗",
             "idle": "{count} 未檢查",
-            "runAll": "全部檢查"
+            "runAll": "全部檢查",
+            "runAllFull": "全部完整探活",
+            "viewDetails": "查看詳情",
+            "detailTitle": "分組健康詳情",
+            "detailDescription": "在首頁查看各分組最新健康快照，並直接執行標準探活或完整探活。"
         }
     },
     "setting": {
@@ -168,9 +172,18 @@
             "hint": "為空禁止跨網域，* 允許所有",
             "example": "只允許指定域名: https://example.com,https://example2.com"
         },
-        "wsUpgrade": {
-            "label": "主動 WebSocket 上游升級",
-            "description": "啟用後無論客戶端協議都主動嘗試 WS 上游連接，禁用則跟隨客戶端協議"
+        "responsesWS": {
+            "enabled": {
+                "label": "OpenAI Responses WebSocket",
+                "description": "為客戶端 WebSocket /v1/responses 入站啟用上游 WebSocket，預設關閉。"
+            },
+            "defaultMode": {
+                "label": "Responses WS 預設模式",
+                "description": "OpenAI Responses 渠道的預設上游 WS 模式，可被渠道級設定覆蓋。",
+                "passthrough": "直通",
+                "transform": "轉換",
+                "off": "關閉"
+            }
         },
         "sseHeartbeat": {
             "label": "SSE 流式心跳間隔（秒）",
@@ -421,12 +434,31 @@
             "title": "健康",
             "detailTitle": "分組健康詳情",
             "run": "檢查",
+            "runFull": "完整探活",
             "lastRun": "上次檢查 {time}",
             "never": "從未檢查",
             "status": "狀態",
             "healthy": "健康",
+            "healthyCount": "{success}/{total} 健康",
             "duration": "耗時",
             "attempts": "嘗試",
+            "attemptListToggle": "嘗試列表（{count}）",
+            "attemptStatus": {
+                "success": "成功",
+                "failed": "失敗",
+                "skipped": "跳過"
+            },
+            "statusValue": {
+                "idle": "未檢查",
+                "running": "檢查中",
+                "success": "健康",
+                "partial": "部分可用",
+                "failed": "失敗"
+            },
+            "probeMode": {
+                "standard": "標準",
+                "full": "完整"
+            },
             "empty": "暫無健康快照。",
             "errorDetails": "錯誤詳情",
             "noHttpStatus": "無 HTTP 狀態"
@@ -497,12 +529,16 @@
             "ws": "WS",
             "wsContinuation": "續傳",
             "wsReplay": "回放",
+            "wsPassthrough": "直通",
+            "wsTransform": "轉換",
             "wsReconnect": "重連恢復",
             "wsReplayRecovery": "回放恢復",
             "wsDowngrade": "降級",
             "wsFreshHint": "本次請求走了上游 WebSocket 新會話。",
             "wsContinuationHint": "本次請求直接續上了上游 WebSocket 會話。",
             "wsReplayHint": "本次請求走了上游 WebSocket，但為了恢復上下文回放了歷史內容。",
+            "wsPassthroughHint": "上游 WebSocket 事件原樣直通下游，未經過內部 transformer 管線。",
+            "wsTransformHint": "上游 WebSocket 事件經過內部 transformer 管線處理。",
             "wsReconnectHint": "本次請求原本的上游 WebSocket 鏈路已中斷，重新建立連線後恢復成功。",
             "wsReplayRecoveryHint": "本次請求先嘗試續傳失敗，隨後自動回放歷史內容恢復了上下文，並建立了新的續傳錨點。",
             "wsDowngradeHint": "本次請求原本嘗試走上游 WebSocket，但因上游不可用已自動降級為 HTTP。",
@@ -608,6 +644,11 @@
             "autoGroupFuzzy": "模糊比對",
             "autoGroupExact": "準確比對",
             "autoGroupRegex": "正規比對",
+            "wsMode": "Responses WS 模式",
+            "wsModeInherit": "跟隨全域",
+            "wsModePassthrough": "直通",
+            "wsModeTransform": "轉換",
+            "wsModeOff": "關閉",
             "matchRegex": "匹配正規",
             "matchRegexPlaceholder": "可選：用於匹配請求模型名稱的正規表示式",
             "remark": "備註"
@@ -742,6 +783,88 @@
                 "envelope_failed": "Sub2API 返回錯誤，請檢查 Access Token、權限或站點狀態。",
                 "missing_data": "Sub2API 回應缺少必要資料，請檢查站點相容性或稍後重試。"
             }
+        }
+    },
+    "proxyPool": {
+        "name": "代理池",
+        "manage": "開啟代理池管理",
+        "empty": "代理池為空",
+        "noEnabled": "沒有可用的代理設定",
+        "selectConfig": "選擇代理設定",
+        "selectRequired": "請選擇代理池設定",
+        "disabledSelected": "目前選擇的代理設定已停用，執行時會失敗；儲存前請改選可用代理。",
+        "disabledSuffix": "（已停用）",
+        "createFailed": "代理設定建立失敗：",
+        "updateFailed": "代理設定更新失敗：",
+        "deleteFailed": "代理設定刪除失敗：",
+        "testFailed": "代理設定測試失敗：",
+        "mode": {
+            "label": "代理模式",
+            "inherit": "繼承站點設定",
+            "direct": "直連",
+            "system": "系統代理",
+            "pool": "代理池"
+        },
+        "dialog": {
+            "title": "代理池",
+            "description": "管理可重複使用的代理設定，站點、站點帳號和普通渠道可從這裡選擇代理。",
+            "searchPlaceholder": "搜尋名稱、URL 或備註",
+            "loading": "載入中...",
+            "loadFailed": "載入失敗：{message}",
+            "empty": "暫無代理設定",
+            "enabled": "啟用",
+            "disabled": "停用",
+            "references": "引用 {count}",
+            "referencesTitle": "查看引用",
+            "referencesDescription": "{name} 目前被以下位置使用。點擊跳轉圖示可定位到對應位置。",
+            "referencesEmpty": "暫無引用",
+            "jumpToReference": "跳轉到引用位置",
+            "managedChannelTitle": "投影渠道：{channel}",
+            "expandReference": "展開投影渠道",
+            "collapseReference": "收起投影渠道",
+            "derivedReferences": "投影 {count}",
+            "referenceTypes": {
+                "site": "站點",
+                "siteAccount": "帳號",
+                "managedChannel": "託管渠道",
+                "channel": "渠道",
+                "reference": "引用"
+            },
+            "referenceLocations": {
+                "site": "站點",
+                "archivedSite": "已封存站點",
+                "siteNamed": "站點：{name}",
+                "siteAccount": "站點帳號",
+                "managedChannel": "站點投影渠道（由站點/帳號繼承，不計入引用數）",
+                "managedChannelUnderSite": "由站點 {site} / 帳號代理投影，不單獨計數",
+                "channel": "普通渠道"
+            },
+            "test": "測試",
+            "edit": "編輯",
+            "delete": "刪除",
+            "deleteBlocked": "仍被引用，不能刪除",
+            "formTitleCreate": "新增代理設定",
+            "formTitleEdit": "編輯代理設定",
+            "formDescription": "URL 支援 http、https、socks、socks5。",
+            "new": "新增",
+            "name": "名稱",
+            "url": "代理 URL",
+            "remark": "備註",
+            "testUrl": "測試目標 URL",
+            "testDraft": "測試目前表單代理",
+            "submitCreate": "建立代理設定",
+            "submitEdit": "儲存修改",
+            "created": "代理設定已建立",
+            "updated": "代理設定已更新",
+            "deleted": "代理設定已刪除",
+            "deleteReferenced": "該代理設定仍被引用，請先解除引用",
+            "formRequired": "請填寫代理名稱和 URL",
+            "testSuccess": "代理可連通：HTTP {statusCode} · {durationMs}ms",
+            "testFailed": "代理測試失敗",
+            "operationFailed": "操作失敗"
+        },
+        "site": {
+            "inherit": "繼承站點代理"
         }
     }
 }
