@@ -75,15 +75,10 @@ export function Step1AddSite() {
             return;
         }
 
-        let resolvedPlatform = platform as SitePlatform | '';
-
-        if (!resolvedPlatform) {
-            try {
-                const detected = await detectPlatform.mutateAsync(baseUrl.trim());
-                resolvedPlatform = detected.platform as SitePlatform;
-                toast.success(`自动检测到平台：${PLATFORM_OPTIONS.find((p) => p.value === resolvedPlatform)?.label ?? resolvedPlatform}`);
-            } catch {
-                toast.error('无法自动检测平台类型，请手动选择');
+        if (platformUserId.trim()) {
+            const parsed = Number(platformUserId.trim());
+            if (!Number.isInteger(parsed) || parsed <= 0) {
+                toast.error('账号 ID 必须是正整数');
                 return;
             }
         }
@@ -96,6 +91,13 @@ export function Step1AddSite() {
 
         setSubmitting(true);
         try {
+            let resolvedPlatform = platform as SitePlatform | '';
+
+            if (!resolvedPlatform) {
+                const detected = await detectPlatform.mutateAsync(baseUrl.trim());
+                resolvedPlatform = detected.platform as SitePlatform;
+                toast.success(`自动检测到平台：${PLATFORM_OPTIONS.find((p) => p.value === resolvedPlatform)?.label ?? resolvedPlatform}`);
+            }
             const site = await createSite.mutateAsync({
                 name: name.trim(),
                 platform: resolvedPlatform as SitePlatform,
