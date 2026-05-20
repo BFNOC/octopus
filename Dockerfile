@@ -17,7 +17,7 @@ RUN go env -w GOPROXY=https://goproxy.cn,direct && \
     go mod download
 COPY . .
 COPY --from=frontend /app/web/out/ ./static/out/
-ARG VERSION=v0.9.20-fork.2
+ARG VERSION=v0.9.20-fork.4
 ARG COMMIT=unknown
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w \
   -X 'github.com/bestruirui/octopus/internal/conf.Version=${VERSION}' \
