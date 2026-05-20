@@ -438,6 +438,7 @@ Fork 链路：[bestruirui/octopus](https://github.com/bestruirui/octopus)（最�
 
 - 🙏 [looplj/axonhub](https://github.com/looplj/axonhub) - 本项目的 LLM API 适配模块直接源自该仓库的实现
 - 📊 [sst/models.dev](https://github.com/sst/models.dev) - AI 模型数据库，提供模型价格数据
+- 🇨🇳 [AtomGit](https://atomgit.com/bestruirui/octopus) - 国内代码托管
 
 ## 🔗 友链
 
