@@ -238,6 +238,7 @@ func DBImportIncremental(ctx context.Context, dump *model.DBDump) (*model.DBImpo
 				return fmt.Errorf("import sites: %w", err)
 			}
 			site.Name = uniqueSiteName(tx, site.Name)
+			site.Normalize()
 			if err := tx.Omit("Accounts").Create(&site).Error; err != nil {
 				return fmt.Errorf("import sites: %w", err)
 			}

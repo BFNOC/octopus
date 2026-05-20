@@ -638,6 +638,7 @@ func upsertImportedSite(tx *gorm.DB, input importedSiteInput) (*model.Site, bool
 	siteRecord = model.Site{
 		Name:     uniqueSiteName(tx, firstNonEmptyString(input.Name, normalizedBaseURL)),
 		Platform: input.Platform,
+		SiteType: model.SiteTypeFree,
 		BaseURL:  normalizedBaseURL,
 		Enabled:  true,
 	}

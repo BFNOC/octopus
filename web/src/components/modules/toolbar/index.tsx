@@ -92,6 +92,7 @@ export function Toolbar() {
     const requestOpenArchivedDialog = useSiteUIStore((s) => s.requestOpenArchivedDialog);
     const requestSyncAll = useSiteUIStore((s) => s.requestSyncAll);
     const requestCheckinAll = useSiteUIStore((s) => s.requestCheckinAll);
+    const siteTypeTab = useToolbarViewOptionsStore((s) => s.siteTypeTab ?? 'free');
     const [expandedSearchItem, setExpandedSearchItem] = useState<ToolbarPage | null>(null);
     const searchExpanded = expandedSearchItem === toolbarItem;
 
@@ -366,6 +367,7 @@ export function Toolbar() {
                                         >
                                             全量同步
                                         </button>
+                                        {siteTypeTab !== 'paid' ? (
                                         <button
                                             type="button"
                                             onClick={requestCheckinAll}
@@ -373,6 +375,7 @@ export function Toolbar() {
                                         >
                                             全量签到
                                         </button>
+                                        ) : null}
                                         <button
                                             type="button"
                                             onClick={requestOpenArchivedDialog}

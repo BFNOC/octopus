@@ -866,5 +866,14 @@
         "site": {
             "inherit": "Inherit site proxy"
         }
+    },
+    "site": {
+        "tab": {
+            "free": "Free Sites",
+            "paid": "Paid Sites"
+        },
+        "typeLabel": "Site Type",
+        "typeFree": "Free",
+        "typePaid": "Paid"
     }
 }

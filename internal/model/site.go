@@ -10,6 +10,22 @@ import (
 	"github.com/bestruirui/octopus/internal/transformer/outbound"
 )
 
+type SiteType string
+
+const (
+	SiteTypeFree SiteType = "free"
+	SiteTypePaid SiteType = "paid"
+)
+
+func (t SiteType) Validate() error {
+	switch t {
+	case SiteTypeFree, SiteTypePaid:
+		return nil
+	default:
+		return fmt.Errorf("unsupported site type: %s", t)
+	}
+}
+
 type SitePlatform string
 
 const (
@@ -72,6 +88,7 @@ type Site struct {
 	ID                 int            `json:"id" gorm:"primaryKey"`
 	Name               string         `json:"name" gorm:"unique;not null"`
 	Platform           SitePlatform   `json:"platform" gorm:"type:varchar(32);not null"`
+	SiteType           SiteType       `json:"site_type" gorm:"type:varchar(16);not null;default:'free'"`
 	BaseURL            string         `json:"base_url" gorm:"not null"`
 	Enabled            bool           `json:"enabled" gorm:"default:true"`
 	ProxyMode          ProxyUsageMode `json:"proxy_mode" gorm:"type:varchar(16);not null;default:'direct'"`
@@ -221,6 +238,7 @@ type SiteUpdateRequest struct {
 	ID                 int             `json:"id" binding:"required"`
 	Name               *string         `json:"name,omitempty"`
 	Platform           *SitePlatform   `json:"platform,omitempty"`
+	SiteType           *SiteType       `json:"site_type,omitempty"`
 	BaseURL            *string         `json:"base_url,omitempty"`
 	Enabled            *bool           `json:"enabled,omitempty"`
 	ProxyMode          *ProxyUsageMode `json:"proxy_mode,omitempty"`
@@ -601,6 +619,11 @@ func (s *Site) Normalize() {
 	if s.SortOrder < 0 {
 		s.SortOrder = 0
 	}
+	if strings.TrimSpace(string(s.SiteType)) == "" {
+		s.SiteType = SiteTypeFree
+	} else {
+		s.SiteType = SiteType(strings.TrimSpace(string(s.SiteType)))
+	}
 }
 
 func (s *Site) Validate() error {
@@ -612,6 +635,9 @@ func (s *Site) Validate() error {
 		return fmt.Errorf("site name is required")
 	}
 	if err := s.Platform.Validate(); err != nil {
+		return err
+	}
+	if err := s.SiteType.Validate(); err != nil {
 		return err
 	}
 	if err := s.ProxyMode.Validate(false); err != nil {

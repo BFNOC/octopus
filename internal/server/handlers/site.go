@@ -150,6 +150,12 @@ func updateSite(c *gin.Context) {
 		resp.InvalidJSON(c)
 		return
 	}
+	if req.SiteType != nil {
+		if err := req.SiteType.Validate(); err != nil {
+			resp.Error(c, http.StatusBadRequest, err.Error())
+			return
+		}
+	}
 	site, err := op.SiteUpdate(&req, c.Request.Context())
 	if err != nil {
 		resp.Error(c, http.StatusInternalServerError, err.Error())

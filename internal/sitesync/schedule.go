@@ -70,6 +70,14 @@ func RefreshAccountRandomCheckinSchedule(ctx context.Context, accountID int) err
 		return fmt.Errorf("site account not found")
 	}
 
+	site, err := op.SiteGet(account.SiteID, ctx)
+	if err != nil {
+		return fmt.Errorf("site not found for account %d: %w", accountID, err)
+	}
+	if site.SiteType == model.SiteTypePaid {
+		return persistNextAutoCheckinAt(ctx, account.ID, nil)
+	}
+
 	nextAt := buildNextRandomCheckinAt(account, time.Now())
 	if err := persistNextAutoCheckinAt(ctx, account.ID, nextAt); err != nil {
 		return err

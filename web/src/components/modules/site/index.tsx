@@ -17,6 +17,7 @@ import {
   SiteAccount,
   SiteCredentialType,
   SitePlatform,
+  type SiteType,
   type CustomHeader,
   useCheckinAllSites,
   useCheckinSiteAccount,
@@ -120,6 +121,7 @@ import {
 type SiteFormState = {
   name: string;
   platform: SitePlatform | "";
+  site_type: SiteType;
   base_url: string;
   enabled: boolean;
   proxy_mode: Exclude<ProxyMode, "inherit">;
@@ -231,6 +233,7 @@ function createEmptySiteForm(): SiteFormState {
   return {
     name: "",
     platform: "",
+    site_type: "free",
     base_url: "",
     enabled: true,
     proxy_mode: "direct",
@@ -247,6 +250,7 @@ function createSiteForm(site: SiteRecord): SiteFormState {
   return {
     name: site.name,
     platform: site.platform,
+    site_type: site.site_type ?? "free",
     base_url: site.base_url,
     enabled: site.enabled,
     proxy_mode: site.proxy_mode ?? "direct",
@@ -910,6 +914,12 @@ export function Site() {
   const setSiteSurfaceFilter = useToolbarViewOptionsStore(
     (state) => state.setSiteFilter,
   );
+  const siteTypeTab = useToolbarViewOptionsStore(
+    (state) => state.siteTypeTab ?? "free",
+  );
+  const setSiteTypeTab = useToolbarViewOptionsStore(
+    (state) => state.setSiteTypeTab,
+  );
   const setSiteHandlers = useSiteUIStore((state) => state.setHandlers);
   const resetSiteHandlers = useSiteUIStore((state) => state.resetHandlers);
   const pendingJump = useJumpStore((state) => state.pending);
@@ -1012,13 +1022,19 @@ export function Site() {
     [],
   );
 
+  const freeSites = useMemo(
+    () => (sites ?? []).filter((s) => (s.site_type ?? "free") === "free"),
+    [sites],
+  );
+
   const inventory = useMemo(() => {
     let totalBalance = 0;
     let totalBalanceUsed = 0;
     let enabledAccounts = 0;
     let totalAccounts = 0;
 
-    for (const site of sites ?? []) {
+    const source = siteTypeTab === "free" ? freeSites : (sites ?? []).filter((s) => s.site_type === "paid");
+    for (const site of source) {
       for (const account of site.accounts) {
         totalAccounts += 1;
         if (site.enabled && account.enabled) {
@@ -1036,7 +1052,7 @@ export function Site() {
       enabledAccounts,
       totalAccounts,
     };
-  }, [sites]);
+  }, [sites, freeSites, siteTypeTab]);
 
   const normalizedQuery = useMemo(
     () => normalizeSearchTerm(searchTerm),
@@ -1051,6 +1067,10 @@ export function Site() {
       const isForcedTarget = forcedSiteId === site.id;
 
       if (!isForcedTarget && !matchesSiteFilter(site, summary, siteSurfaceFilter)) {
+        return [];
+      }
+
+      if (!isForcedTarget && (site.site_type ?? "free") !== siteTypeTab) {
         return [];
       }
 
@@ -1110,7 +1130,7 @@ export function Site() {
         },
       ];
     });
-  }, [sites, normalizedQuery, siteSurfaceFilter, checkinFilterStatus, forcedSiteId]);
+  }, [sites, normalizedQuery, siteSurfaceFilter, siteTypeTab, checkinFilterStatus, forcedSiteId]);
 
   const hasActiveFilters =
     normalizedQuery.length > 0 ||
@@ -1216,6 +1236,7 @@ export function Site() {
     const payload = {
       name: siteForm.name.trim(),
       platform: platform as SitePlatform,
+      site_type: siteForm.site_type,
       base_url: siteForm.base_url.trim(),
       enabled: siteForm.enabled,
       proxy_mode: siteForm.proxy_mode,
@@ -2058,6 +2079,7 @@ export function Site() {
                                       <span>
                                         {account.auto_sync ? "自动同步" : "手动同步"}
                                       </span>
+                                      {site.site_type !== "paid" ? (
                                       <span>
                                         {account.auto_checkin
                                           ? account.random_checkin
@@ -2065,6 +2087,7 @@ export function Site() {
                                             : "自动签到"
                                           : "手动签到"}
                                       </span>
+                                      ) : null}
                                       <span>
                                         {account.proxy_mode === "inherit"
                                           ? tProxy('site.inherit')
@@ -2192,7 +2215,7 @@ export function Site() {
                                         translateSiteMessage(locale, account.last_sync_message, t) || "等待首次同步"
                                       }
                                     />
-                                    {supportsCheckin ? (
+                                    {site.site_type !== "paid" && supportsCheckin ? (
                                       accountHasCheckinEnabled(
                                         account,
                                         site.platform,
@@ -2211,13 +2234,13 @@ export function Site() {
                                       ) : (
                                         <StaticSummary text="签到未启用" />
                                       )
-                                    ) : (
+                                    ) : site.site_type !== "paid" ? (
                                       <StaticSummary
                                         tone="warning"
                                         text="当前平台不支持签到"
                                       />
-                                    )}
-                                    {account.auto_checkin &&
+                                    ) : null}
+                                    {site.site_type !== "paid" && account.auto_checkin &&
                                     account.random_checkin ? (
                                       <div className="pl-4 text-xs text-muted-foreground">
                                         下次自动签到{" "}
@@ -2254,8 +2277,43 @@ export function Site() {
         className="space-y-4 pb-24 md:pb-4"
         childLayout={false}
       >
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            className={cn(
+              "rounded-full px-4 py-1.5 text-sm font-medium transition-colors",
+              siteTypeTab === "free"
+                ? "bg-primary text-primary-foreground"
+                : "bg-muted/60 text-muted-foreground hover:bg-muted",
+            )}
+            onClick={() => {
+              setSiteTypeTab("free");
+              setSelectedSiteIds([]);
+            }}
+          >
+            {t("site.tab.free")}
+          </button>
+          <button
+            type="button"
+            className={cn(
+              "rounded-full px-4 py-1.5 text-sm font-medium transition-colors",
+              siteTypeTab === "paid"
+                ? "bg-primary text-primary-foreground"
+                : "bg-muted/60 text-muted-foreground hover:bg-muted",
+            )}
+            onClick={() => {
+              setSiteTypeTab("paid");
+              setSelectedSiteIds([]);
+              setCheckinFilterStatus("all");
+            }}
+          >
+            {t("site.tab.paid")}
+          </button>
+        </div>
+
+        {siteTypeTab === "free" ? (
         <CheckinPanel
-          sites={sites}
+          sites={freeSites}
           inventory={inventory}
           statusDayKey={statusDayKey}
           visibleSiteCount={visibleSites.length}
@@ -2273,6 +2331,7 @@ export function Site() {
           filterStatus={checkinFilterStatus}
           onFilterChange={setCheckinFilterStatus}
         />
+        ) : null}
 
         {selectedSiteIds.length > 0 ? (
           <section className="rounded-3xl border border-primary/30 bg-primary/5 p-4">
@@ -2460,6 +2519,27 @@ export function Site() {
                   </SelectContent>
                 </Select>
               </label>
+
+              <label className="grid gap-2 text-sm">
+                <span className="font-medium">{t("site.typeLabel")}</span>
+                <Select
+                  value={siteForm.site_type}
+                  onValueChange={(value) =>
+                    setSiteForm((current) => ({
+                      ...current,
+                      site_type: value as SiteType,
+                    }))
+                  }
+                >
+                  <SelectTrigger className="w-full rounded-xl">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="free">{t("site.typeFree")}</SelectItem>
+                    <SelectItem value="paid">{t("site.typePaid")}</SelectItem>
+                  </SelectContent>
+                </Select>
+              </label>
             </div>
 
             <label className="grid gap-2 text-sm">
@@ -2501,6 +2581,7 @@ export function Site() {
               }))}
             />
 
+            {siteForm.site_type !== "paid" ? (
             <label className="grid gap-2 text-sm">
               <span className="font-medium">手动签到 URL</span>
               <Input
@@ -2518,6 +2599,7 @@ export function Site() {
                 配置后可在站点总览中一键打开此页面进行手动签到，适用于有验证码等无法自动化签到的场景。
               </span>
             </label>
+            ) : null}
 
             <div className="space-y-3 rounded-2xl border border-border/60 bg-muted/10 p-4">
               <div className="flex items-center justify-between gap-3">
@@ -2912,6 +2994,8 @@ export function Site() {
                   />
                 </div>
 
+                {accountSite?.site_type !== "paid" ? (
+                <>
                 <div className="flex items-center justify-between rounded-2xl border border-border/60 bg-muted/20 px-4 py-3">
                   <div>
                     <div className="flex items-center gap-2">
@@ -2955,9 +3039,11 @@ export function Site() {
                     }
                   />
                 </div>
+                </>
+                ) : null}
               </div>
 
-              {accountForm.auto_checkin && accountForm.random_checkin ? (
+              {accountSite?.site_type !== "paid" && accountForm.auto_checkin && accountForm.random_checkin ? (
                 <div className="grid gap-4 md:grid-cols-2">
                   <label className="grid gap-2 text-sm">
                     <span className="font-medium">最小签到间隔（小时）</span>
@@ -3020,9 +3106,9 @@ export function Site() {
                   key 会聚合到同一个 channel；多端点兼容站点会按模型已归属的
                   请求端点格式继续拆成独立托管 channel。
                 </p>
-                {accountForm.auto_checkin && accountForm.random_checkin ? (
+                {accountSite?.site_type !== "paid" && accountForm.auto_checkin && accountForm.random_checkin ? (
                   <p>
-                    随机签到会基于“上次成功签到时间 + 最小间隔 + 0
+                    随机签到会基于”上次成功签到时间 + 最小间隔 + 0
                     到随机延迟窗口”的规则生成下次执行时间，适合需要接近 24
                     小时间隔的站点。
                   </p>

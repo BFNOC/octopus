@@ -11,12 +11,14 @@ export type ChannelFilter = 'all' | 'enabled' | 'disabled';
 export type GroupFilter = 'all' | 'with-members' | 'empty';
 export type ModelFilter = 'all' | 'priced' | 'free';
 export type SiteFilter = 'all' | 'abnormal' | 'enabled' | 'disabled' | 'pinned';
+export type SiteTypeTab = 'free' | 'paid';
 
 interface ToolbarViewOptionsState {
     layouts: Partial<Record<ToolbarPage, ToolbarLayout>>;
     sortFields: Partial<Record<ToolbarCreatedSortablePage, ToolbarSortField>>;
     sortOrders: Partial<Record<ToolbarPage, ToolbarSortOrder>>;
     siteFilter: SiteFilter;
+    siteTypeTab: SiteTypeTab;
     channelFilter: ChannelFilter;
     groupFilter: GroupFilter;
     modelFilter: ModelFilter;
@@ -35,6 +37,7 @@ interface ToolbarViewOptionsState {
     setSortOrder: (item: ToolbarPage, value: ToolbarSortOrder) => void;
 
     setSiteFilter: (value: SiteFilter) => void;
+    setSiteTypeTab: (value: SiteTypeTab) => void;
     setChannelFilter: (value: ChannelFilter) => void;
     setGroupFilter: (value: GroupFilter) => void;
     setModelFilter: (value: ModelFilter) => void;
@@ -47,6 +50,7 @@ export const useToolbarViewOptionsStore = create<ToolbarViewOptionsState>()(
             sortFields: {},
             sortOrders: {},
             siteFilter: 'all',
+            siteTypeTab: 'free',
             channelFilter: 'all',
             groupFilter: 'all',
             modelFilter: 'all',
@@ -70,6 +74,7 @@ export const useToolbarViewOptionsStore = create<ToolbarViewOptionsState>()(
             },
 
             setSiteFilter: (value) => set({ siteFilter: value }),
+            setSiteTypeTab: (value) => set({ siteTypeTab: value }),
             setChannelFilter: (value) => set({ channelFilter: value }),
             setGroupFilter: (value) => set({ groupFilter: value }),
             setModelFilter: (value) => set({ modelFilter: value }),
@@ -81,6 +86,7 @@ export const useToolbarViewOptionsStore = create<ToolbarViewOptionsState>()(
                 sortFields: state.sortFields,
                 sortOrders: state.sortOrders,
                 siteFilter: state.siteFilter,
+                siteTypeTab: state.siteTypeTab,
                 channelFilter: state.channelFilter,
                 groupFilter: state.groupFilter,
                 modelFilter: state.modelFilter,

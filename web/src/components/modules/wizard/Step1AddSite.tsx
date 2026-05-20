@@ -101,6 +101,7 @@ export function Step1AddSite() {
             const site = await createSite.mutateAsync({
                 name: name.trim(),
                 platform: resolvedPlatform as SitePlatform,
+                site_type: 'free',
                 base_url: baseUrl.trim(),
                 enabled: true,
                 proxy_mode: 'direct',

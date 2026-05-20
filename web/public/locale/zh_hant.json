@@ -866,5 +866,14 @@
         "site": {
             "inherit": "繼承站點代理"
         }
+    },
+    "site": {
+        "tab": {
+            "free": "公益站點",
+            "paid": "付費站點"
+        },
+        "typeLabel": "站點類型",
+        "typeFree": "公益",
+        "typePaid": "付費"
     }
 }

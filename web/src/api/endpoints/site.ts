@@ -16,6 +16,8 @@ export enum SitePlatform {
   Gemini = "gemini",
 }
 
+export type SiteType = "free" | "paid";
+
 export enum SiteCredentialType {
   UsernamePassword = "username_password",
   AccessToken = "access_token",
@@ -104,6 +106,7 @@ export type Site = {
   id: number;
   name: string;
   platform: SitePlatform;
+  site_type: SiteType;
   base_url: string;
   enabled: boolean;
   proxy_mode: Exclude<ProxyMode, "inherit">;
@@ -207,6 +210,7 @@ export function useArchivedSiteList(enabled = false) {
 function normalizeSiteServerList(data: SiteServer[]): Site[] {
   return data.map((site) => ({
     ...site,
+    site_type: (site as Record<string, unknown>).site_type === "paid" ? "paid" as const : "free" as const,
     custom_header: site.custom_header ?? [],
     proxy_mode: site.proxy_mode ?? "direct",
     proxy_config_id: site.proxy_config_id ?? null,

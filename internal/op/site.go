@@ -132,6 +132,10 @@ func SiteUpdate(req *model.SiteUpdateRequest, ctx context.Context) (*model.Site,
 		merged.Platform = *req.Platform
 		selectFields = append(selectFields, "platform")
 	}
+	if req.SiteType != nil {
+		merged.SiteType = *req.SiteType
+		selectFields = append(selectFields, "site_type")
+	}
 	if req.BaseURL != nil {
 		merged.BaseURL = *req.BaseURL
 		selectFields = append(selectFields, "base_url")
@@ -187,6 +191,9 @@ func SiteUpdate(req *model.SiteUpdateRequest, ctx context.Context) (*model.Site,
 	}
 	if req.Platform != nil {
 		updates.Platform = merged.Platform
+	}
+	if req.SiteType != nil {
+		updates.SiteType = merged.SiteType
 	}
 	if req.BaseURL != nil {
 		updates.BaseURL = merged.BaseURL

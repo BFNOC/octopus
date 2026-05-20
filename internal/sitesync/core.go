@@ -248,6 +248,9 @@ func eligibleCheckinAccounts(sites []model.Site) []siteBatchAccount {
 		if !siteRecord.Enabled {
 			continue
 		}
+		if siteRecord.SiteType == model.SiteTypePaid {
+			continue
+		}
 		for accountIndex := range siteRecord.Accounts {
 			account := &siteRecord.Accounts[accountIndex]
 			if !account.Enabled || !account.AutoCheckin {
