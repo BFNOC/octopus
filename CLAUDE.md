@@ -88,14 +88,123 @@ graph TD
     Probe -->|探活| ExtLLM
 ```
 
+## 模块文档导航
+
+下图节点可点击跳转到对应的模块级 `CLAUDE.md`。所有模块已覆盖。
+
+```mermaid
+graph TD
+    Root["(根) Octopus"]
+    Root --> Internal["internal/"]
+    Root --> Web["web/"]
+
+    Internal --> AppError["apperror/"]
+    Internal --> Conf["conf/"]
+    Internal --> DB["db/"]
+    Internal --> Model["model/"]
+    Internal --> Op["op/"]
+    Internal --> Client["client/"]
+    Internal --> Helper["helper/"]
+    Internal --> GroupHealth["grouphealth/"]
+    Internal --> Task["task/"]
+    Internal --> Update["update/"]
+    Internal --> Price["price/"]
+    Internal --> Site["site/"]
+    Internal --> SiteSync["sitesync/"]
+    Internal --> Health["health/"]
+    Internal --> Probe["probe/"]
+    Internal --> Relay["relay/"]
+    Internal --> Transformer["transformer/"]
+    Internal --> Server["server/"]
+    Internal --> Utils["utils/"]
+
+    DB --> Migrate["db/migrate/"]
+    Server --> Handlers["server/handlers/"]
+    Server --> Middleware["server/middleware/"]
+    Server --> RouterMod["server/router/"]
+    Server --> Auth["server/auth/"]
+    Server --> Resp["server/resp/"]
+    Relay --> RelayBalancer["relay/balancer/"]
+    Relay --> RelayAffinity["relay/affinity/"]
+    Relay --> RelayCompat["relay/compat/"]
+    Relay --> RelayBodycache["relay/bodycache/"]
+    Transformer --> TfModel["transformer/model/"]
+    Transformer --> TfInbound["transformer/inbound/"]
+    Transformer --> TfOutbound["transformer/outbound/"]
+    Transformer --> TfCompat["transformer/compat/"]
+    Utils --> Cache["utils/cache/"]
+    Utils --> Log["utils/log/"]
+    Utils --> Safe["utils/safe/"]
+    Utils --> Shutdown["utils/shutdown/"]
+    Utils --> Snowflake["utils/snowflake/"]
+    Utils --> Tokenizer["utils/tokenizer/"]
+    Utils --> XSlice["utils/xslice/"]
+    Utils --> XStrings["utils/xstrings/"]
+    Utils --> XUrl["utils/xurl/"]
+    Utils --> Diff["utils/diff/"]
+
+    Web --> WebApi["src/api/"]
+    Web --> WebRoute["src/route/"]
+    Web --> WebModules["src/components/modules/"]
+
+    click AppError "./internal/apperror/CLAUDE.md" "apperror 模块文档"
+    click Conf "./internal/conf/CLAUDE.md" "conf 模块文档"
+    click DB "./internal/db/CLAUDE.md" "db 模块文档"
+    click Migrate "./internal/db/migrate/CLAUDE.md" "db/migrate 模块文档"
+    click Model "./internal/model/CLAUDE.md" "model 模块文档"
+    click Op "./internal/op/CLAUDE.md" "op 模块文档"
+    click Client "./internal/client/CLAUDE.md" "client 模块文档"
+    click Helper "./internal/helper/CLAUDE.md" "helper 模块文档"
+    click GroupHealth "./internal/grouphealth/CLAUDE.md" "grouphealth 模块文档"
+    click Task "./internal/task/CLAUDE.md" "task 模块文档"
+    click Update "./internal/update/CLAUDE.md" "update 模块文档"
+    click Price "./internal/price/CLAUDE.md" "price 模块文档"
+    click Site "./internal/site/CLAUDE.md" "site 模块文档"
+    click SiteSync "./internal/sitesync/CLAUDE.md" "sitesync 模块文档"
+    click Health "./internal/health/CLAUDE.md" "health 模块文档"
+    click Probe "./internal/probe/CLAUDE.md" "probe 模块文档"
+    click Relay "./internal/relay/CLAUDE.md" "relay 模块文档"
+    click RelayBalancer "./internal/relay/balancer/CLAUDE.md" "relay/balancer 模块文档"
+    click RelayAffinity "./internal/relay/affinity/CLAUDE.md" "relay/affinity 模块文档"
+    click RelayCompat "./internal/relay/compat/CLAUDE.md" "relay/compat 模块文档"
+    click RelayBodycache "./internal/relay/bodycache/CLAUDE.md" "relay/bodycache 模块文档"
+    click Transformer "./internal/transformer/CLAUDE.md" "transformer 模块文档"
+    click TfModel "./internal/transformer/model/CLAUDE.md" "transformer/model 模块文档"
+    click TfInbound "./internal/transformer/inbound/CLAUDE.md" "transformer/inbound 模块文档"
+    click TfOutbound "./internal/transformer/outbound/CLAUDE.md" "transformer/outbound 模块文档"
+    click TfCompat "./internal/transformer/compat/CLAUDE.md" "transformer/compat 模块文档"
+    click Server "./internal/server/CLAUDE.md" "server 模块文档"
+    click Handlers "./internal/server/handlers/CLAUDE.md" "handlers 模块文档"
+    click Middleware "./internal/server/middleware/CLAUDE.md" "middleware 模块文档"
+    click RouterMod "./internal/server/router/CLAUDE.md" "router 模块文档"
+    click Auth "./internal/server/auth/CLAUDE.md" "auth 模块文档"
+    click Resp "./internal/server/resp/CLAUDE.md" "resp 模块文档"
+    click Cache "./internal/utils/cache/CLAUDE.md" "utils/cache 模块文档"
+    click Log "./internal/utils/log/CLAUDE.md" "utils/log 模块文档"
+    click Safe "./internal/utils/safe/CLAUDE.md" "utils/safe 模块文档"
+    click Shutdown "./internal/utils/shutdown/CLAUDE.md" "utils/shutdown 模块文档"
+    click Snowflake "./internal/utils/snowflake/CLAUDE.md" "utils/snowflake 模块文档"
+    click Tokenizer "./internal/utils/tokenizer/CLAUDE.md" "utils/tokenizer 模块文档"
+    click XSlice "./internal/utils/xslice/CLAUDE.md" "utils/xslice 模块文档"
+    click XStrings "./internal/utils/xstrings/CLAUDE.md" "utils/xstrings 模块文档"
+    click XUrl "./internal/utils/xurl/CLAUDE.md" "utils/xurl 模块文档"
+    click Diff "./internal/utils/diff/CLAUDE.md" "utils/diff 模块文档"
+    click Web "./web/CLAUDE.md" "web 模块文档"
+    click WebApi "./web/src/api/CLAUDE.md" "web/src/api 模块文档"
+    click WebRoute "./web/src/route/CLAUDE.md" "web/src/route 模块文档"
+    click WebModules "./web/src/components/modules/CLAUDE.md" "web/src/components/modules 模块文档"
+```
+
 ## 后端关键模块 (`internal/`)
 
 ### 核心层
 
 | 模块 | 职责 |
 |------|------|
+| `apperror/` | 统一应用错误类型，携带机器可读 Code + HTTP Status + 参数 |
 | `conf/` | Viper 配置管理，env 前缀 `OCTOPUS_`，默认读取 `data/config.json` |
 | `db/` | GORM 数据库层，支持 SQLite(默认)/MySQL/PostgreSQL，`db/migrate/` 含迁移 |
+| `db/migrate/` | 版本化 schema 迁移框架，编号递增，幂等执行 |
 | `model/` | 数据模型定义 (Channel, Group, User, APIKey, Setting, Site, Stats 等) |
 | `op/` | **业务逻辑层 (Service)**，包含内存缓存管理，Handler 调用此层而非直接操作 DB |
 | `client/` | LLM 提供商 HTTP 客户端封装 |
@@ -139,6 +248,7 @@ graph TD
 |------|------|
 | `health/` | 通道健康状态机 (Active→Penalized→Recovering→Quarantined)，环形缓冲区统计 |
 | `probe/` | 模型探活：并发探测模型可用性、TTFT，调度器管理探测频率 |
+| `grouphealth/` | 分组健康检查：按优先级探活组内通道，生成快照，支持 Standard/Full 两种探测模式 |
 
 ### 辅助与运维
 
@@ -224,3 +334,10 @@ graph TD
 4. **Handler 层扩展**：API 参数扩展（如 `model_names`、`prompt`、`delay_ms`）在 handler 层处理，不改变底层模块接口
 5. **前端独立组件**：新增 UI 组件（如 `ProbeModal`）放在对应模块目录下，不修改上游已有组件的核心逻辑
 6. **冲突预防**：如果上游可能新增同名字段/函数，使用 wrapper 模式或在 `_ext.go` 文件中隔离
+
+## 变更记录 (Changelog)
+
+| 日期 | 变更 |
+|------|------|
+| 2026-05-15 | 新增「模块文档导航」Mermaid 可点击树形图；为 18 个模块补齐 `CLAUDE.md`（conf、db、model、op、client、helper、task、update、price、site、server 及其 5 个子模块、utils/cache、web、web/src/api、web/src/route、web/src/components/modules）。 |
+| 2026-05-20 | 补齐剩余 19 个模块 `CLAUDE.md`（apperror、grouphealth、db/migrate、relay/affinity、relay/bodycache、relay/compat、transformer/compat、transformer/inbound、transformer/model、transformer/outbound、utils/diff、utils/log、utils/safe、utils/shutdown、utils/snowflake、utils/tokenizer、utils/xslice、utils/xstrings、utils/xurl）；更新导航图至 100% 覆盖。 |
