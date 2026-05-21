@@ -34,11 +34,11 @@
 | `apikey_filter.go` | API Key 过滤规则 |
 | `user.go` | 用户管理（登录、密码） |
 | `llm.go` | LLM 模型元数据缓存（来自 `price/`） |
-| `site.go` | 站点 CRUD |
+| `site.go` | 站点 CRUD，`SiteUpdate` 支持 `site_type` 部分更新 |
 | `site_binding.go` | 站点-通道绑定关系 |
 | `site_channel.go` | 站点通道管理 |
 | `site_channel_errors.go` | 站点通道错误类型 |
-| `site_import.go` | 站点导入 |
+| `site_import.go` | 站点导入，`upsertImportedSite` 新建站点时默认 `SiteType: SiteTypeFree` |
 | `site_import_errors.go` | 站点导入错误类型 |
 | `site_price.go` | 站点价格 |
 | `probe.go` | 探活结果存取 |
@@ -47,12 +47,18 @@
 | `stats_site_model.go` | 站点-模型维度统计 |
 | `stats_site_model_backfill.go` | 历史统计回填（异步） |
 | `balancer_state.go` | 负载均衡器状态持久化 |
-| `backup.go` | 备份导入/导出 |
+| `backup.go` | 备份导入/导出，`DBImportIncremental` 中 Site 导入走 `Normalize()` 自动补齐 `site_type` |
+
+## site_type 相关逻辑
+
+- `site.go` — `SiteUpdate` 支持 `SiteType *model.SiteType` 部分更新字段（select "site_type"）
+- `site_import.go` — `upsertImportedSite` 创建新站点时固定 `SiteType: model.SiteTypeFree`
+- `backup.go` — `DBImportIncremental` 在第 4 步导入 Site 时调用 `site.Normalize()` ，空 `site_type` 自动回退为 `free`
 
 ## 缓存模式
 
 - 数据加载到内存（`utils/cache` 分片缓存）；读路径走缓存，写路径双写 DB + 缓存
-- 启动顺序敏感：setting → channel → group → apikey → llm → site_price → stats（见 `cache.go`）
+- 启动顺序敏感：setting -> channel -> group -> apikey -> llm -> site_price -> stats（见 `cache.go`）
 
 ## 依赖关系
 
@@ -65,3 +71,9 @@
 
 - 新增业务函数优先创建新文件（如 `xxx_ext.go`）或新方法，避免修改上游已有函数签名
 - 缓存初始化顺序如有变化，必须更新 `cache.go` 并保证依赖顺序
+
+## 变更记录 (Changelog)
+
+| 日期 | 变更 |
+|------|------|
+| 2025-05-21 | `SiteUpdate` 新增 `site_type` 合并逻辑；`upsertImportedSite` 默认 `SiteTypeFree`；备份恢复兼容 `site_type` |

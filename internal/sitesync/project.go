@@ -35,6 +35,9 @@ func ProjectAccount(ctx context.Context, accountID int) ([]int, error) {
 				log.Warnf("failed to disable managed channel %d: %v", binding.ChannelID, err)
 			}
 		}
+		if err := op.RefreshChannelSiteTypeCache(ctx); err != nil {
+			log.Warnf("failed to refresh channel site type cache after project disabled account %d: %v", accountID, err)
+		}
 		return channelIDs, nil
 	}
 
@@ -252,6 +255,10 @@ func ProjectAccount(ctx context.Context, accountID int) ([]int, error) {
 		if err := db.GetDB().WithContext(ctx).Delete(&binding).Error; err != nil {
 			return nil, fmt.Errorf("failed to delete stale site channel binding: %w", err)
 		}
+	}
+
+	if err := op.RefreshChannelSiteTypeCache(ctx); err != nil {
+		log.Warnf("failed to refresh channel site type cache after project account %d: %v", account.ID, err)
 	}
 
 	return managedChannelIDs, nil

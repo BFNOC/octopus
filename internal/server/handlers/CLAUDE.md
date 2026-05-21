@@ -26,7 +26,7 @@
 | `probe.go` | 模型探活触发与结果查询 |
 | `relay.go` | LLM API 代理入口（`/v1/*` 等） |
 | `setting.go` | 系统设置读写 |
-| `site.go` | 站点 CRUD、签到、同步触发 |
+| `site.go` | 站点 CRUD、签到、同步触发；`updateSite` 对 `site_type` 做预校验 (`Validate`) |
 | `site_channel.go` | 站点通道（同步生成的通道）管理 |
 | `stats.go` | 统计查询 |
 | `tester.go` | 通道测试器（发送测试请求） |
@@ -34,6 +34,10 @@
 | `user.go` | 登录、密码修改 |
 | `explain.go` | 错误诊断/解释 |
 | `crud_errors.go` | CRUD 公共错误处理 |
+
+## site_type 预校验
+
+`site.go` 中的 `updateSite` handler 在调用 `op.SiteUpdate` 前，若请求包含 `site_type` 字段，先调用 `req.SiteType.Validate()` 检查枚举合法性，非法值返回 400。
 
 ## 依赖关系
 
@@ -54,3 +58,9 @@
 
 - API 参数扩展（如 `model_names`、`prompt`、`delay_ms`）在 handler 层处理，**不改变底层 op/relay 接口签名**
 - 新增 handler 放新文件，避免修改上游已有 handler 的核心分发逻辑
+
+## 变更记录 (Changelog)
+
+| 日期 | 变更 |
+|------|------|
+| 2025-05-21 | `updateSite` handler 新增 `site_type` 预校验（在 `op.SiteUpdate` 调用前验证枚举合法性） |

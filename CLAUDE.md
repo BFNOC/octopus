@@ -203,9 +203,9 @@ graph TD
 |------|------|
 | `apperror/` | 统一应用错误类型，携带机器可读 Code + HTTP Status + 参数 |
 | `conf/` | Viper 配置管理，env 前缀 `OCTOPUS_`，默认读取 `data/config.json` |
-| `db/` | GORM 数据库层，支持 SQLite(默认)/MySQL/PostgreSQL，`db/migrate/` 含迁移 |
+| `db/` | GORM 数据库层，支持 SQLite(默认)/MySQL/PostgreSQL，`db/migrate/` 含迁移（001~014） |
 | `db/migrate/` | 版本化 schema 迁移框架，编号递增，幂等执行 |
-| `model/` | 数据模型定义 (Channel, Group, User, APIKey, Setting, Site, Stats 等) |
+| `model/` | 数据模型定义 (Channel, Group, User, APIKey, Setting, Site + SiteType, Stats 等) |
 | `op/` | **业务逻辑层 (Service)**，包含内存缓存管理，Handler 调用此层而非直接操作 DB |
 | `client/` | LLM 提供商 HTTP 客户端封装 |
 
@@ -238,8 +238,8 @@ graph TD
 
 | 模块 | 职责 |
 |------|------|
-| `site/` | 站点服务入口，委托 `sitesync/` 执行 |
-| `sitesync/` | 站点同步核心：账户同步、签到、项目管理、定价、路由探测、批量操作 |
+| `site/` | 站点服务入口，委托 `sitesync/` 执行；paid 站点清空签到调度 |
+| `sitesync/` | 站点同步核心：账户同步、签到（过滤 paid 站点）、项目管理、定价、路由探测、批量操作 |
 | `price/` | LLM 模型价格管理，从 models.dev 拉取价格表 |
 
 ### 健康与探活
@@ -282,13 +282,13 @@ graph TD
 | 模块 | 职责 |
 |------|------|
 | `home/` | 首页仪表盘：图表、活动流、排行 |
-| `site/` | 站点管理：站点列表、签到面板 |
+| `site/` | 站点管理：Free/Paid Tab 切换、站点列表、签到面板（paid 站点隐藏签到 UI） |
 | `site-channel/` | 站点通道管理：通道列表、绑定、UI 状态 |
 | `channel/` | 通道管理：卡片、创建、表单、Tab 切换 |
 | `group/` | 分组管理：卡片、创建、编辑器 |
 | `model/` | 模型管理：列表、创建、覆盖层 |
-| `toolbar/` | 工具栏：搜索框、视图选项 |
-| `wizard/` | 快速设置向导：4 步引导流程 |
+| `toolbar/` | 工具栏：搜索框、视图选项、SiteTypeTab（free/paid）状态管理 |
+| `wizard/` | 快速设置向导：4 步引导流程（创建站点默认 free） |
 | `apikey-dashboard/` | API Key 仪表盘 |
 | `setting/` | 设置页：系统、账户、外观、备份、日志、LLM 同步/价格、通道健康、熔断器 |
 | `log/` | 日志查看 |
@@ -341,3 +341,5 @@ graph TD
 |------|------|
 | 2026-05-15 | 新增「模块文档导航」Mermaid 可点击树形图；为 18 个模块补齐 `CLAUDE.md`（conf、db、model、op、client、helper、task、update、price、site、server 及其 5 个子模块、utils/cache、web、web/src/api、web/src/route、web/src/components/modules）。 |
 | 2026-05-20 | 补齐剩余 19 个模块 `CLAUDE.md`（apperror、grouphealth、db/migrate、relay/affinity、relay/bodycache、relay/compat、transformer/compat、transformer/inbound、transformer/model、transformer/outbound、utils/diff、utils/log、utils/safe、utils/shutdown、utils/snowflake、utils/tokenizer、utils/xslice、utils/xstrings、utils/xurl）；更新导航图至 100% 覆盖。 |
+| 2026-05-21 | 站点类型分离 (`site_type: free/paid`)：更新 model、op、sitesync、handlers、db/migrate、site、web/api、web/modules 共 9 个模块文档，反映 SiteType 枚举、签到过滤、迁移 014、前端 Tab 切换等变更。 |
+| 2026-05-21 | 全量扫描验证：确认 49 个模块 `CLAUDE.md` 100% 覆盖；site_type 功能文档完整性验证通过；新增 `openspec/` 目录记录（site-type-separation 设计文档）；修正变更记录日期一致性。 |

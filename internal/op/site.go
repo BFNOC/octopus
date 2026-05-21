@@ -9,6 +9,7 @@ import (
 
 	"github.com/bestruirui/octopus/internal/db"
 	"github.com/bestruirui/octopus/internal/model"
+	"github.com/bestruirui/octopus/internal/utils/log"
 	"gorm.io/gorm"
 )
 
@@ -230,6 +231,11 @@ func SiteUpdate(req *model.SiteUpdateRequest, ctx context.Context) (*model.Site,
 			Updates(&updates).Error; err != nil {
 			return nil, fmt.Errorf("failed to update site: %w", err)
 		}
+		if req.SiteType != nil {
+			if err := RefreshChannelSiteTypeCache(ctx); err != nil {
+				log.Warnf("failed to refresh channel site type cache after site type update: %v", err)
+			}
+		}
 	}
 	return SiteGet(req.ID, ctx)
 }
@@ -278,12 +284,15 @@ func SiteDel(id int, ctx context.Context) error {
 	for _, accountID := range affectedAccountIDs {
 		sitePriceClearCacheForAccount(accountID)
 	}
+	if err := RefreshChannelSiteTypeCache(ctx); err != nil {
+		log.Warnf("failed to refresh channel site type cache after site delete: %v", err)
+	}
 	return nil
 }
 
 func SiteArchive(id int, ctx context.Context) error {
 	now := time.Now()
-	return db.GetDB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err := db.GetDB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Model(&model.Site{}).Where("id = ?", id).Updates(map[string]any{
 			"archived":    true,
 			"archived_at": &now,
@@ -293,15 +302,27 @@ func SiteArchive(id int, ctx context.Context) error {
 		}
 		return tx.Model(&model.SiteAccount{}).Where("site_id = ?", id).Update("enabled", false).Error
 	})
+	if err == nil {
+		if cacheErr := RefreshChannelSiteTypeCache(ctx); cacheErr != nil {
+			log.Warnf("failed to refresh channel site type cache after site archive: %v", cacheErr)
+		}
+	}
+	return err
 }
 
 func SiteRestore(id int, ctx context.Context) error {
-	return db.GetDB().WithContext(ctx).Model(&model.Site{}).
+	err := db.GetDB().WithContext(ctx).Model(&model.Site{}).
 		Where("id = ?", id).
 		Updates(map[string]any{
 			"archived":    false,
 			"archived_at": gorm.Expr("NULL"),
 		}).Error
+	if err == nil {
+		if cacheErr := RefreshChannelSiteTypeCache(ctx); cacheErr != nil {
+			log.Warnf("failed to refresh channel site type cache after site restore: %v", cacheErr)
+		}
+	}
+	return err
 }
 
 func SiteAccountGet(id int, ctx context.Context) (*model.SiteAccount, error) {
@@ -520,6 +541,9 @@ func SiteAccountDel(id int, ctx context.Context) error {
 		return err
 	}
 	sitePriceClearCacheForAccount(id)
+	if err := RefreshChannelSiteTypeCache(ctx); err != nil {
+		log.Warnf("failed to refresh channel site type cache after site account delete: %v", err)
+	}
 	return nil
 }
 

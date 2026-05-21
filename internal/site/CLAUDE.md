@@ -18,7 +18,7 @@
 | `ProjectSite(ctx, siteID)` | 站点级项目同步 |
 | `SyncAll(ctx)` | 全量同步 |
 | `CheckinAll(ctx)` | 全量签到 |
-| `RefreshAccountRandomCheckinSchedule(ctx, accountID)` | 刷新随机签到时间表 |
+| `RefreshAccountRandomCheckinSchedule(ctx, accountID)` | 刷新随机签到时间表（paid 站点自动清空调度） |
 | `DeleteSite(ctx, siteID)` | 删除站点（包含级联清理） |
 
 ## 关键文件
@@ -26,6 +26,10 @@
 | 文件 | 职责 |
 |------|------|
 | `service.go` | 全部公开函数；每个函数都是 `sitesync/` 对应函数的转发 |
+
+## site_type 影响
+
+`RefreshAccountRandomCheckinSchedule` 内部委托给 `sitesync/schedule.go`，当站点为 `paid` 类型时清空签到调度。门面层自身不做类型判断，逻辑在 `sitesync/` 中。
 
 ## 依赖关系
 
@@ -36,3 +40,9 @@
 
 - 此模块作为稳定门面，新增接口先在 `sitesync/` 实现，再在 `service.go` 透出
 - 不在此模块中包含业务逻辑
+
+## 变更记录 (Changelog)
+
+| 日期 | 变更 |
+|------|------|
+| 2025-05-21 | 文档补充 `RefreshAccountRandomCheckinSchedule` 对 `paid` 站点的清空调度行为说明 |

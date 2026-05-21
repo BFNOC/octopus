@@ -54,6 +54,9 @@ func GroupGetEnabledMap(name string, ctx context.Context) (model.Group, error) {
 		if !ok || !channel.Enabled {
 			continue
 		}
+		if isChannelFromPaidSite(item.ChannelID) {
+			continue
+		}
 		enabledItems = append(enabledItems, item)
 	}
 	group.Items = enabledItems

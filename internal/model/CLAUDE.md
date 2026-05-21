@@ -18,7 +18,7 @@
 | `group.go` | `Group`（通道分组：负载均衡策略、亲和） |
 | `group_health.go` | `GroupHealth`（分组聚合健康状态） |
 | `group_snapshot.go` | `GroupSnapshot`（分组配置快照，用于回滚） |
-| `site.go` | `Site`（外部 LLM 站点账号） |
+| `site.go` | `Site`（外部 LLM 站点）、`SiteType` 枚举（`free`/`paid`）、`SiteAccount`、`SiteToken`、`SiteModel` 等 |
 | `site_channel.go` | `SiteChannel`（站点同步出来的通道） |
 | `site_import.go` | 站点导入元数据 |
 | `site_price.go` | 站点价格快照 |
@@ -29,6 +29,19 @@
 | `stats.go` | 统计数据模型 |
 | `llm.go` | LLM 模型元数据（价格、能力） |
 | `backup.go` | 备份/恢复数据结构 |
+
+## Site 模型站点类型 (`SiteType`)
+
+`Site` 结构体包含 `SiteType` 字段，用于区分免费站点与付费站点：
+
+| 枚举值 | 含义 | 行为影响 |
+|--------|------|---------|
+| `free` (默认) | 免费站点 | 支持签到功能，签到调度正常执行 |
+| `paid` | 付费站点 | 跳过签到（`eligibleCheckinAccounts` 过滤）、清空随机签到调度、前端隐藏签到相关 UI |
+
+- `SiteType.Validate()` 校验枚举值合法性
+- `Site.Normalize()` 在空值时回退为 `free`
+- `SiteUpdateRequest` 包含可选 `SiteType` 指针字段，支持部分更新
 
 ## 公开接口约定
 
@@ -46,3 +59,9 @@
 - **新增字段安全**：在已有结构体上加字段属于纯增量，可直接修改
 - **新增模型**：在新文件中定义，命名遵循领域语义
 - **不修改字段类型**：避免破坏上游迁移与序列化兼容性
+
+## 变更记录 (Changelog)
+
+| 日期 | 变更 |
+|------|------|
+| 2025-05-21 | 新增 `SiteType` 枚举（`free`/`paid`）及 `Site.SiteType` 字段、`SiteUpdateRequest.SiteType` 字段；`Normalize()` 支持空值回退 `free`；`Validate()` 链增加 `SiteType.Validate()` |
