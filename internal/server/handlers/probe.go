@@ -107,7 +107,11 @@ func probeChannel(c *gin.Context) {
 	}
 
 	// 解析通道代理 HTTP 客户端
-	httpClient, _ := helper.ChannelHTTPClientWithContext(c.Request.Context(), channel)
+	httpClient, err := helper.ChannelHTTPClientWithContext(c.Request.Context(), channel)
+	if err != nil {
+		resp.Error(c, http.StatusBadRequest, fmt.Sprintf("failed to resolve channel proxy: %v", err))
+		return
+	}
 
 	scheduleInput := probe.ScheduleInput{
 		ChannelID:   channelID,

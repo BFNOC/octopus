@@ -22,6 +22,8 @@ import (
 	"strings"
 	"time"
 	"unicode/utf8"
+
+	"github.com/bestruirui/octopus/internal/client"
 )
 
 // probeSingleFull 对单个模型发起流式探测（扩展版：支持自定义 prompt、headers、响应文本提取、代理）
@@ -73,7 +75,7 @@ func probeSingleFull(ctx context.Context, url, apiKey, modelName, prompt string,
 	}
 
 	if httpClient == nil {
-		httpClient = http.DefaultClient
+		httpClient, _ = client.GetHTTPClientSystemProxy(false)
 	}
 	resp, err := httpClient.Do(req)
 	if err != nil {
