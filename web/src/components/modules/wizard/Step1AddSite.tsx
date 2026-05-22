@@ -55,6 +55,7 @@ export function Step1AddSite() {
     const [name, setName] = useState('');
     const [baseUrl, setBaseUrl] = useState('');
     const [platform, setPlatform] = useState<string>('');
+    const [siteType, setSiteType] = useState<'free' | 'paid'>('free');
     const [token, setToken] = useState('');
     const [platformUserId, setPlatformUserId] = useState('');
     const [submitting, setSubmitting] = useState(false);
@@ -101,7 +102,7 @@ export function Step1AddSite() {
             const site = await createSite.mutateAsync({
                 name: name.trim(),
                 platform: resolvedPlatform as SitePlatform,
-                site_type: 'free',
+                site_type: siteType,
                 base_url: baseUrl.trim(),
                 enabled: true,
                 proxy_mode: 'direct',
@@ -208,6 +209,19 @@ export function Step1AddSite() {
                             />
                         </Label>
                     </div>
+
+                    <Label className="grid gap-2">
+                        <span>站点类型</span>
+                        <Select value={siteType} onValueChange={(v) => setSiteType(v as 'free' | 'paid')}>
+                            <SelectTrigger className="w-full rounded-xl">
+                                <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="free">公益（免费）</SelectItem>
+                                <SelectItem value="paid">付费</SelectItem>
+                            </SelectContent>
+                        </Select>
+                    </Label>
 
                     <Label className="grid gap-2">
                         <span>账号 ID <span className="text-muted-foreground">(可选)</span></span>
