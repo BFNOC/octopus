@@ -33,6 +33,7 @@ export interface LLMChannel {
     site_group_name?: string;
     site_name?: string;
     site_account_name?: string;
+    site_type?: 'free' | 'paid';
     endpoint_type?: string;
 }
 

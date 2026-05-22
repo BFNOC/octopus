@@ -496,6 +496,7 @@ func ChannelLLMList(ctx context.Context) ([]model.LLMChannel, error) {
 		siteAccountName := ""
 		siteGroupKey := ""
 		siteGroupName := ""
+		siteType := model.SiteType("")
 		endpointType := "openai"
 		var siteID *int
 		var siteAccountID *int
@@ -505,9 +506,11 @@ func ChannelLLMList(ctx context.Context) ([]model.LLMChannel, error) {
 			siteGroupKey = model.NormalizeSiteGroupKey(binding.GroupKey)
 			if site, ok := siteCache[binding.SiteID]; ok {
 				siteName = site.Name
+				siteType = site.SiteType
 			} else if site, getErr := SiteGet(binding.SiteID, ctx); getErr == nil {
 				siteCache[binding.SiteID] = site
 				siteName = site.Name
+				siteType = site.SiteType
 			}
 			if account, ok := accountCache[binding.SiteAccountID]; ok {
 				siteAccountName = account.Name
@@ -555,6 +558,7 @@ func ChannelLLMList(ctx context.Context) ([]model.LLMChannel, error) {
 				SiteGroupName:   siteGroupName,
 				SiteName:        siteName,
 				SiteAccountName: siteAccountName,
+				SiteType:        siteType,
 				EndpointType:    endpointType,
 			})
 		}

@@ -38,12 +38,18 @@ function ModelPickerSection({
     onAdd,
     onAutoAdd,
     autoAddDisabled,
+    includePaid,
+    onIncludePaidChange,
+    hasPaidChannels,
 }: {
     modelChannels: LLMChannel[];
     selectedMembers: SelectedMember[];
     onAdd: (channel: LLMChannel) => void;
     onAutoAdd: () => void;
     autoAddDisabled: boolean;
+    includePaid: boolean;
+    onIncludePaidChange: (value: boolean) => void;
+    hasPaidChannels: boolean;
 }) {
     const t = useTranslations('group');
     const [searchKeyword, setSearchKeyword] = useState('');
@@ -85,12 +91,12 @@ function ModelPickerSection({
 
     return (
         <div className="rounded-xl border border-border/50 bg-muted/30 flex flex-col min-h-0">
-            <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2 px-3 py-2 border-b border-border/30 bg-muted/50">
-                <span className="min-w-0 justify-self-start text-sm font-medium text-foreground">
+            <div className="flex items-center flex-wrap gap-2 px-3 py-2 border-b border-border/30 bg-muted/50">
+                <span className="min-w-0 text-sm font-medium text-foreground">
                     {t('form.addItem')}
                 </span>
 
-                <div className="relative justify-self-center w-30">
+                <div className="relative w-30">
                     <Search className="pointer-events-none absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
                     <Input
                         value={searchKeyword}
@@ -100,11 +106,24 @@ function ModelPickerSection({
                     />
                 </div>
 
+                {hasPaidChannels && (
+                    <label className="flex items-center gap-1 shrink-0 cursor-pointer">
+                        <Switch
+                            checked={includePaid}
+                            onCheckedChange={onIncludePaidChange}
+                            className="scale-75 origin-left"
+                        />
+                        <span className="text-xs text-muted-foreground">{t('form.includePaid')}</span>
+                    </label>
+                )}
+
+                <div className="flex-1" />
+
                 <button
                     type="button"
                     onClick={onAutoAdd}
                     className={cn(
-                        'justify-self-end shrink-0 flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium transition-colors',
+                        'shrink-0 flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium transition-colors',
                         autoAddDisabled
                             ? 'text-muted-foreground/50 cursor-not-allowed'
                             : 'hover:bg-muted text-muted-foreground hover:text-foreground'
@@ -266,7 +285,17 @@ export function GroupEditor({
     onCancel?: () => void;
 }) {
     const t = useTranslations('group');
-    const { data: modelChannels = [] } = useModelChannelList();
+    const { data: allModelChannels = [] } = useModelChannelList();
+
+    const hasPaidChannels = useMemo(
+        () => allModelChannels.some((mc) => mc.site_type === 'paid'),
+        [allModelChannels]
+    );
+    const [includePaid, setIncludePaid] = useState(false);
+    const modelChannels = useMemo(
+        () => includePaid ? allModelChannels : allModelChannels.filter((mc) => (mc.site_type ?? 'free') !== 'paid'),
+        [allModelChannels, includePaid]
+    );
 
     const [groupName, setGroupName] = useState(initial?.name ?? '');
     const [matchRegex, setMatchRegex] = useState(initial?.match_regex ?? '');
@@ -535,6 +564,9 @@ export function GroupEditor({
                                 onAdd={handleAddMember}
                                 onAutoAdd={handleAutoAdd}
                                 autoAddDisabled={autoAddDisabled}
+                                includePaid={includePaid}
+                                onIncludePaidChange={setIncludePaid}
+                                hasPaidChannels={hasPaidChannels}
                             />
                             <SortSection
                                 members={selectedMembers}

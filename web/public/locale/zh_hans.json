@@ -422,7 +422,8 @@
             "autoAdd": "自动添加",
             "clear": "清空",
             "selectChannel": "渠道",
-            "selectModel": "模型"
+            "selectModel": "模型",
+            "includePaid": "付费站点"
         },
         "mode": {
             "roundRobin": "轮询",
