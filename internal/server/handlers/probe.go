@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/bestruirui/octopus/internal/helper"
 	"github.com/bestruirui/octopus/internal/model"
 	"github.com/bestruirui/octopus/internal/op"
 	"github.com/bestruirui/octopus/internal/probe"
@@ -105,13 +106,8 @@ func probeChannel(c *gin.Context) {
 		return
 	}
 
-	// 解析通道代理配置
-	var proxyURL string
-	if channel.ProxyMode == model.ProxyUsageModePool && channel.ProxyConfigID != nil && *channel.ProxyConfigID > 0 {
-		if url, err := op.ProxyURLForConfig(*channel.ProxyConfigID, c.Request.Context()); err == nil {
-			proxyURL = url
-		}
-	}
+	// 解析通道代理 HTTP 客户端
+	httpClient, _ := helper.ChannelHTTPClientWithContext(c.Request.Context(), channel)
 
 	scheduleInput := probe.ScheduleInput{
 		ChannelID:   channelID,
@@ -123,7 +119,7 @@ func probeChannel(c *gin.Context) {
 		Concurrency: input.Concurrency,
 		DelayMs:     input.DelayMs,
 		Headers:     input.Headers,
-		ProxyURL:    proxyURL,
+		HTTPClient:  httpClient,
 	}
 
 	// SSE 流式返回

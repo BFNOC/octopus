@@ -18,19 +18,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
-	"net/url"
 	"strings"
 	"time"
 	"unicode/utf8"
-
-	"golang.org/x/net/proxy"
 )
 
 // probeSingleFull 对单个模型发起流式探测（扩展版：支持自定义 prompt、headers、响应文本提取、代理）
 // 与上游 probeSingle 分离，便于合并
-func probeSingleFull(ctx context.Context, url, apiKey, modelName, prompt string, timeoutSec int, headers map[string]string, proxyURL string) ProbeResult {
+func probeSingleFull(ctx context.Context, url, apiKey, modelName, prompt string, timeoutSec int, headers map[string]string, httpClient *http.Client) ProbeResult {
 	start := time.Now()
 
 	reqBody := chatRequest{
@@ -76,13 +72,9 @@ func probeSingleFull(ctx context.Context, url, apiKey, modelName, prompt string,
 		}
 	}
 
-	httpClient := http.DefaultClient
-	if proxyURL != "" {
-		if client, err := newProbeHTTPClient(proxyURL); err == nil {
-			httpClient = client
-		}
+	if httpClient == nil {
+		httpClient = http.DefaultClient
 	}
-
 	resp, err := httpClient.Do(req)
 	if err != nil {
 		return ProbeResult{
@@ -158,7 +150,7 @@ func ProbeModelsFull(ctx context.Context, input ProbeInput, onResult func(ProbeR
 		sem <- struct{}{}
 		go func(idx int, model string) {
 			defer func() { <-sem }()
-			r := probeSingleFull(ctx, url, input.APIKey, model, prompt, input.Timeout, input.Headers, input.ProxyURL)
+			r := probeSingleFull(ctx, url, input.APIKey, model, prompt, input.Timeout, input.Headers, input.HTTPClient)
 			results[idx] = r
 			if onResult != nil {
 				onResult(r)
@@ -233,33 +225,4 @@ func truncateUTF8(s string, maxRunes int) string {
 	}
 	runes := []rune(s)
 	return string(runes[:maxRunes]) + "..."
-}
-
-// newProbeHTTPClient 创建支持代理的 HTTP 客户端
-func newProbeHTTPClient(proxyURLStr string) (*http.Client, error) {
-	transport, ok := http.DefaultTransport.(*http.Transport)
-	if !ok {
-		return http.DefaultClient, nil
-	}
-	cloned := transport.Clone()
-	proxyURL, err := url.Parse(proxyURLStr)
-	if err != nil {
-		return http.DefaultClient, nil
-	}
-	switch proxyURL.Scheme {
-	case "http", "https":
-		cloned.Proxy = http.ProxyURL(proxyURL)
-	case "socks", "socks5":
-		socksDialer, err := proxy.FromURL(proxyURL, proxy.Direct)
-		if err != nil {
-			return http.DefaultClient, nil
-		}
-		cloned.Proxy = nil
-		cloned.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
-			return socksDialer.Dial(network, addr)
-		}
-	default:
-		return http.DefaultClient, nil
-	}
-	return &http.Client{Transport: cloned}, nil
 }

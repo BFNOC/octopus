@@ -32,7 +32,7 @@ type ProbeInput struct {
 	Concurrency int               `json:"concurrency"` // 并发数
 	DelayMs     int               `json:"delay_ms"`    // 批次间隔（毫秒）
 	Headers     map[string]string `json:"headers"`     // 自定义请求头，nil 时使用 Cherry Studio 默认头
-	ProxyURL    string            `json:"proxy_url"`   // 代理 URL，为空时直连
+	HTTPClient  *http.Client      `json:"-"`           // 通道代理 HTTP 客户端，nil 时直连
 }
 
 // DefaultProbeHeaders 返回 Cherry Studio 默认请求头
