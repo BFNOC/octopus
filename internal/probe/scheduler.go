@@ -17,6 +17,7 @@ type ScheduleInput struct {
 	Concurrency int               `json:"concurrency"`
 	DelayMs     int               `json:"delay_ms"`
 	Headers     map[string]string `json:"headers"`
+	ProxyURL    string            `json:"proxy_url"`
 }
 
 // ChannelSchedule 多 Channel 并发编排器
@@ -53,6 +54,7 @@ func (s *ChannelSchedule) RunBatch(ctx context.Context, inputs []ScheduleInput, 
 				Concurrency: 1, // 由外层 ChannelSchedule 控制并发
 				DelayMs:     in.DelayMs,
 				Headers:     in.Headers,
+				ProxyURL:    in.ProxyURL,
 			}
 
 			probeResults, err := ProbeModelsFull(ctx, probeInput, func(r ProbeResult) {

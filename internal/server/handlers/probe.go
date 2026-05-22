@@ -105,6 +105,14 @@ func probeChannel(c *gin.Context) {
 		return
 	}
 
+	// 解析通道代理配置
+	var proxyURL string
+	if channel.ProxyMode == model.ProxyUsageModePool && channel.ProxyConfigID != nil && *channel.ProxyConfigID > 0 {
+		if url, err := op.ProxyURLForConfig(*channel.ProxyConfigID, c.Request.Context()); err == nil {
+			proxyURL = url
+		}
+	}
+
 	scheduleInput := probe.ScheduleInput{
 		ChannelID:   channelID,
 		BaseURL:     baseURL,
@@ -115,6 +123,7 @@ func probeChannel(c *gin.Context) {
 		Concurrency: input.Concurrency,
 		DelayMs:     input.DelayMs,
 		Headers:     input.Headers,
+		ProxyURL:    proxyURL,
 	}
 
 	// SSE 流式返回
