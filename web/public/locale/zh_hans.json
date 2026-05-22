@@ -423,7 +423,7 @@
             "clear": "清空",
             "selectChannel": "渠道",
             "selectModel": "模型",
-            "includePaid": "付费站点"
+            "includePaid": "包含付费站点"
         },
         "mode": {
             "roundRobin": "轮询",

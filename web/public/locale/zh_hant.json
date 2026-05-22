@@ -423,7 +423,7 @@
             "clear": "清空",
             "selectChannel": "供應源",
             "selectModel": "模型",
-            "includePaid": "付費站點"
+            "includePaid": "包含付費站點"
         },
         "mode": {
             "roundRobin": "輪詢",

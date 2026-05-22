@@ -423,7 +423,7 @@
             "clear": "Clear",
             "selectChannel": "Channel",
             "selectModel": "Model",
-            "includePaid": "Paid Sites"
+            "includePaid": "Include paid sites"
         },
         "mode": {
             "roundRobin": "Round Robin",
