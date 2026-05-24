@@ -1,0 +1,12 @@
+{
+  "id": "check-upstream-merged-prs",
+  "title": "检查上游和最上游是否有已合并 PR",
+  "status": "completed",
+  "complexity": "S",
+  "risk": "low",
+  "domain": "repo",
+  "currentPhase": "completed",
+  "nextAction": "归档任务",
+  "createdAt": "2026-05-24T06:30:17Z",
+  "branch": "dev"
+}
