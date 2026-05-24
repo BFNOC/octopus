@@ -1,0 +1,12 @@
+{
+  "id": "fix-web-lint-and-metapi-check",
+  "title": "修复前端 pnpm lint 并核对 metapi 参考设计",
+  "status": "completed",
+  "complexity": "M",
+  "risk": "medium",
+  "domain": "frontend",
+  "currentPhase": "completed",
+  "nextAction": "归档任务",
+  "createdAt": "2026-05-24T02:29:07Z",
+  "branch": "dev"
+}
