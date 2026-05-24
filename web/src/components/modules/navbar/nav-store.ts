@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
+import { createBrowserJSONStorage } from '@/lib/storage'
 
 export type NavItem = 'home' | 'site' | 'channel' | 'group' | 'model' | 'log' | 'setting' | 'wizard'
 
@@ -33,6 +34,7 @@ export const useNavStore = create<NavState>()(
         }),
         {
             name: 'nav-storage',
+            storage: createBrowserJSONStorage(),
         }
     )
 )

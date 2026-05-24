@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
-import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import {
     Select,
@@ -86,12 +85,7 @@ export function Tester() {
 
     const models = useMemo(() => extractModels(channels ?? []), [channels]);
 
-    // Auto-select first model
-    useEffect(() => {
-        if (!model && models.length > 0) {
-            setModel(models[0]);
-        }
-    }, [models, model]);
+    const activeModel = model && models.includes(model) ? model : models[0] ?? '';
 
     // Auto-scroll
     useEffect(() => {
@@ -100,7 +94,7 @@ export function Tester() {
 
     const handleSend = useCallback(() => {
         const trimmed = input.trim();
-        if (!trimmed || !model || isStreaming) return;
+        if (!trimmed || !activeModel || isStreaming) return;
 
         const userMessages: ChatMessage[] = [];
         if (systemPrompt.trim()) {
@@ -108,7 +102,7 @@ export function Tester() {
         }
         userMessages.push({ role: 'user', content: trimmed });
 
-        chat(model, userMessages, {
+        chat(activeModel, userMessages, {
             temperature,
             maxTokens: maxTokens === '' ? undefined : maxTokens,
             stream,
@@ -117,7 +111,7 @@ export function Tester() {
 
         setInput('');
         inputRef.current?.focus();
-    }, [input, model, isStreaming, systemPrompt, temperature, maxTokens, stream, protocol, chat]);
+    }, [input, activeModel, isStreaming, systemPrompt, temperature, maxTokens, stream, protocol, chat]);
 
     const handleKeyDown = (e: React.KeyboardEvent) => {
         if (e.key === 'Enter' && !e.shiftKey) {
@@ -131,7 +125,7 @@ export function Tester() {
             {/* Top Bar */}
             <div className="flex items-center gap-3 p-4 border-b">
                 <div className="flex-1">
-                    <Select value={model} onValueChange={setModel}>
+                    <Select value={activeModel} onValueChange={setModel}>
                         <SelectTrigger className="w-full">
                             <SelectValue placeholder="Select a model..." />
                         </SelectTrigger>
@@ -301,7 +295,7 @@ export function Tester() {
                         <Button
                             size="icon"
                             onClick={handleSend}
-                            disabled={!input.trim() || !model}
+                            disabled={!input.trim() || !activeModel}
                             title="Send"
                         >
                             <Send className="size-4" />

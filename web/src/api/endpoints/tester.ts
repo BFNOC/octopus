@@ -22,6 +22,25 @@ export type ChatParams = {
     protocol?: Protocol;
 };
 
+type TextBlock = {
+    type?: string;
+    text?: string;
+};
+
+type NonStreamResponse = {
+    content?: TextBlock[];
+    candidates?: Array<{
+        content?: {
+            parts?: Array<{ text?: string }>;
+        };
+    }>;
+    choices?: Array<{
+        message?: {
+            content?: string | null;
+        };
+    }>;
+};
+
 // ─── SSE Response Parsing ──────────────────────────────────────────────────
 
 function extractDeltaContent(protocol: Protocol, data: string): string | null {
@@ -50,15 +69,15 @@ function extractDeltaContent(protocol: Protocol, data: string): string | null {
     }
 }
 
-function extractNonStreamContent(protocol: Protocol, data: any): string {
+function extractNonStreamContent(protocol: Protocol, data: NonStreamResponse): string {
     switch (protocol) {
         case 'anthropic': {
             // Anthropic: {"content":[{"type":"text","text":"..."}]}
             const blocks = data.content;
             if (Array.isArray(blocks)) {
                 return blocks
-                    .filter((b: any) => b.type === 'text')
-                    .map((b: any) => b.text)
+                    .filter((b) => b.type === 'text')
+                    .map((b) => b.text ?? '')
                     .join('');
             }
             return JSON.stringify(data);
@@ -141,7 +160,7 @@ export function useTestChat() {
             }
 
             if (params?.stream === false) {
-                const data = await resp.json();
+                const data = await resp.json() as NonStreamResponse;
                 const content = extractNonStreamContent(protocol, data);
                 setMessages(prev => [...prev, { role: 'assistant', content }]);
                 setLastResponse(JSON.stringify(data, null, 2));

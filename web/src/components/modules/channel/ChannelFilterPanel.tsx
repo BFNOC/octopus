@@ -88,41 +88,22 @@ function ChannelFilterPanelImpl({
         return Array.from(groupMap.values());
     }, [batchFilter, channelMap]);
 
-    const currentAccount = accountGroups.find((g) => g.accountId === selectedAccountId);
+    const currentAccount = open
+        ? (accountGroups.find((g) => g.accountId === selectedAccountId) ?? accountGroups[0])
+        : undefined;
+    const activeAccountId = currentAccount?.accountId ?? null;
+    const activeChannelId = currentAccount?.channels.some((c) => c.id === selectedChannelId)
+        ? selectedChannelId
+        : currentAccount?.channels[0]?.id ?? null;
 
     useEffect(() => {
-        if (open && accountGroups.length > 0 && selectedAccountId === null) {
-            setSelectedAccountId(accountGroups[0].accountId);
-        }
-    }, [open, accountGroups, selectedAccountId]);
-
-    useEffect(() => {
-        if (currentAccount && currentAccount.channels.length > 0) {
-            const ids = currentAccount.channels.map((c) => c.id);
-            if (!selectedChannelId || !ids.includes(selectedChannelId)) {
-                setSelectedChannelId(currentAccount.channels[0].id);
-            }
-        }
-    }, [currentAccount, selectedChannelId]);
-
-    // 验证当前选择仍属于有效的 accountGroups（站点同步后渠道可能变化）
-    useEffect(() => {
-        if (!open || accountGroups.length === 0) return;
-        const validAccountIds = new Set(accountGroups.map((g) => g.accountId));
-        if (selectedAccountId !== null && !validAccountIds.has(selectedAccountId)) {
-            setSelectedAccountId(accountGroups[0].accountId);
-            setSelectedChannelId(null);
-        }
-    }, [open, accountGroups, selectedAccountId]);
-
-    useEffect(() => {
-        if (open && selectedChannelId && searchRef.current) {
+        if (open && activeChannelId && searchRef.current) {
             const timer = setTimeout(() => searchRef.current?.focus(), 120);
             return () => clearTimeout(timer);
         }
-    }, [open, selectedChannelId]);
+    }, [open, activeChannelId]);
 
-    const selectedChannel = selectedChannelId ? channelMap.get(selectedChannelId) : null;
+    const selectedChannel = activeChannelId ? channelMap.get(activeChannelId) : null;
 
     const availableModels = useMemo(() => {
         if (!selectedChannel) return [];
@@ -130,7 +111,7 @@ function ChannelFilterPanelImpl({
         return [...new Set(modelStr.split(',').map((m) => m.trim()).filter(Boolean))].sort();
     }, [selectedChannel]);
 
-    const selectedFilterData = selectedChannelId ? filterDataMap.get(selectedChannelId) : null;
+    const selectedFilterData = activeChannelId ? filterDataMap.get(activeChannelId) : null;
     const currentMode: FilterMode = (selectedFilterData?.model_filter_mode as FilterMode) || 'none';
 
     const currentFilteredModels = useMemo(() => {
@@ -151,9 +132,9 @@ function ChannelFilterPanelImpl({
     }, [availableModels, search]);
 
     const handleModeChange = useCallback(async (newMode: FilterMode) => {
-        if (!selectedChannelId) return;
+        if (!activeChannelId) return;
         try {
-            await updateChannel.mutateAsync({ id: selectedChannelId, model_filter_mode: newMode });
+            await updateChannel.mutateAsync({ id: activeChannelId, model_filter_mode: newMode });
             queryClient.invalidateQueries({ queryKey: ['channels', 'batch-filter'] });
             toast.success(
                 newMode === 'none' ? '已关闭过滤' :
@@ -163,14 +144,14 @@ function ChannelFilterPanelImpl({
         } catch (err: unknown) {
             toast.error(err instanceof Error ? err.message : '更新失败');
         }
-    }, [selectedChannelId, updateChannel, queryClient]);
+    }, [activeChannelId, updateChannel, queryClient]);
 
     const handleToggleModel = useCallback(async (modelName: string) => {
-        if (!selectedChannelId || currentMode === 'none') return;
+        if (!activeChannelId || currentMode === 'none') return;
         const isCurrentlyFiltered = currentFilteredModels.has(modelName);
         try {
             await batchUpdateFilter.mutateAsync({
-                channel_id: selectedChannelId,
+                channel_id: activeChannelId,
                 action: isCurrentlyFiltered ? 'delete' : 'add',
                 models: [modelName],
                 mode: currentMode,
@@ -178,14 +159,14 @@ function ChannelFilterPanelImpl({
         } catch (err: unknown) {
             toast.error(err instanceof Error ? err.message : '操作失败');
         }
-    }, [selectedChannelId, currentMode, currentFilteredModels, batchUpdateFilter]);
+    }, [activeChannelId, currentMode, currentFilteredModels, batchUpdateFilter]);
 
     const handleAddCustomModel = useCallback(async () => {
-        if (!selectedChannelId || currentMode === 'none' || !newModelName.trim()) return;
+        if (!activeChannelId || currentMode === 'none' || !newModelName.trim()) return;
         const name = newModelName.trim();
         try {
             await batchUpdateFilter.mutateAsync({
-                channel_id: selectedChannelId,
+                channel_id: activeChannelId,
                 action: 'add',
                 models: [name],
                 mode: currentMode,
@@ -195,15 +176,15 @@ function ChannelFilterPanelImpl({
         } catch (err: unknown) {
             toast.error(err instanceof Error ? err.message : '添加失败');
         }
-    }, [selectedChannelId, currentMode, newModelName, batchUpdateFilter]);
+    }, [activeChannelId, currentMode, newModelName, batchUpdateFilter]);
 
     const handleSelectAll = useCallback(async () => {
-        if (!selectedChannelId || currentMode === 'none') return;
+        if (!activeChannelId || currentMode === 'none') return;
         const toAdd = filteredModels.filter((m) => !currentFilteredModels.has(m));
         if (toAdd.length === 0) return;
         try {
             await batchUpdateFilter.mutateAsync({
-                channel_id: selectedChannelId,
+                channel_id: activeChannelId,
                 action: 'add',
                 models: toAdd,
                 mode: currentMode,
@@ -212,15 +193,15 @@ function ChannelFilterPanelImpl({
         } catch (err: unknown) {
             toast.error(err instanceof Error ? err.message : '操作失败');
         }
-    }, [selectedChannelId, currentMode, filteredModels, currentFilteredModels, batchUpdateFilter]);
+    }, [activeChannelId, currentMode, filteredModels, currentFilteredModels, batchUpdateFilter]);
 
     const handleDeselectAll = useCallback(async () => {
-        if (!selectedChannelId || currentMode === 'none') return;
+        if (!activeChannelId || currentMode === 'none') return;
         const toRemove = filteredModels.filter((m) => currentFilteredModels.has(m));
         if (toRemove.length === 0) return;
         try {
             await batchUpdateFilter.mutateAsync({
-                channel_id: selectedChannelId,
+                channel_id: activeChannelId,
                 action: 'delete',
                 models: toRemove,
                 mode: currentMode,
@@ -229,15 +210,7 @@ function ChannelFilterPanelImpl({
         } catch (err: unknown) {
             toast.error(err instanceof Error ? err.message : '操作失败');
         }
-    }, [selectedChannelId, currentMode, filteredModels, currentFilteredModels, batchUpdateFilter]);
-
-    const modeLabel = (mode: FilterMode) => {
-        switch (mode) {
-            case 'none': return '不过滤';
-            case 'allow-list': return '白名单';
-            case 'deny-list': return '黑名单';
-        }
-    };
+    }, [activeChannelId, currentMode, filteredModels, currentFilteredModels, batchUpdateFilter]);
 
     const modeLabelWithDesc = (mode: FilterMode) => {
         switch (mode) {
@@ -278,7 +251,7 @@ function ChannelFilterPanelImpl({
                     {accountGroups.length > 1 && (
                         <div className="flex gap-1.5 overflow-x-auto shrink-0">
                             {accountGroups.map((group) => {
-                                const isActive = selectedAccountId === group.accountId;
+                                const isActive = activeAccountId === group.accountId;
                                 return (
                                     <button
                                         key={group.accountId}
@@ -291,6 +264,7 @@ function ChannelFilterPanelImpl({
                                         )}
                                         onClick={() => {
                                             setSelectedAccountId(group.accountId);
+                                            setSelectedChannelId(null);
                                             setSearch('');
                                         }}
                                     >
@@ -308,7 +282,7 @@ function ChannelFilterPanelImpl({
                     {currentAccount && currentAccount.channels.length > 1 && (
                         <div className="flex gap-1 overflow-x-auto shrink-0">
                             {currentAccount.channels.map((ch) => {
-                                const isSelected = selectedChannelId === ch.id;
+                                const isSelected = activeChannelId === ch.id;
                                 const { mode } = getChannelFilterBadge(ch);
                                 return (
                                     <button
@@ -339,7 +313,7 @@ function ChannelFilterPanelImpl({
                     )}
 
                     {/* Filter Config */}
-                    {selectedChannelId ? (
+                    {activeChannelId ? (
                         <>
                             {/* Mode Selector — compact pill buttons like metapi */}
                             <div className="flex gap-1.5 flex-wrap shrink-0">
@@ -390,12 +364,12 @@ function ChannelFilterPanelImpl({
                                                         type="button"
                                                         className="text-xs text-destructive hover:underline cursor-pointer px-1 py-0.5"
                                                         onClick={async () => {
-                                                            if (!selectedChannelId) return;
+                                                            if (!activeChannelId) return;
                                                             const allModels = Array.from(currentFilteredModels);
                                                             if (allModels.length === 0) return;
                                                             try {
                                                                 await batchUpdateFilter.mutateAsync({
-                                                                    channel_id: selectedChannelId,
+                                                                    channel_id: activeChannelId,
                                                                     action: 'delete',
                                                                     models: allModels,
                                                                     mode: currentMode,

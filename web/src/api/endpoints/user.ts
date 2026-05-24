@@ -4,6 +4,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { apiClient, setAuthStoreGetter } from '../client';
 import { logger } from '@/lib/logger';
+import { createBrowserJSONStorage } from '@/lib/storage';
 
 /**
  * 用户登录请求
@@ -125,6 +126,7 @@ export const useAuthStore = create<AuthState>()(
         }),
         {
             name: 'auth-storage',
+            storage: createBrowserJSONStorage(),
             partialize: (state) => ({
                 token: state.token,
                 expireAt: state.expireAt,
@@ -252,4 +254,3 @@ export function useAuth() {
         logout: store.logout,
     };
 }
-

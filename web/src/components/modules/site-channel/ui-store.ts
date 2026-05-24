@@ -2,6 +2,7 @@
 
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { createBrowserJSONStorage } from '@/lib/storage';
 
 export type SiteChannelQuickFilter = 'attention' | 'with_history' | 'disabled';
 export type SiteChannelTableSortField = 'model_name' | 'group_name' | 'route_type' | 'last_request_at';
@@ -75,6 +76,7 @@ export const useSiteChannelPanelViewStore = create<SiteChannelPanelState>()(
         }),
         {
             name: 'site-channel-panel-view-storage',
+            storage: createBrowserJSONStorage(),
             partialize: (state) => ({
                 panels: state.panels,
             }),

@@ -429,7 +429,7 @@ export function useBatchUpdateChannelFilter() {
         mutationFn: async (data: { channel_id: number; action: 'add' | 'delete' | 'replace'; models: string[]; mode: string }) => {
             return apiClient.post<null>('/api/v1/channel/filter/batch-update', data);
         },
-        onSuccess: (_data, variables) => {
+        onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['channels', 'batch-filter'] });
             queryClient.invalidateQueries({ queryKey: ['channels', 'list'] });
         },

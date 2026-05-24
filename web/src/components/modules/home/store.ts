@@ -1,7 +1,8 @@
 'use client';
 
 import { create } from 'zustand';
-import { createJSONStorage, persist } from 'zustand/middleware';
+import { persist } from 'zustand/middleware';
+import { createBrowserJSONStorage } from '@/lib/storage';
 
 export type RankSortMode = 'cost' | 'count' | 'tokens';
 export type ChartPeriod = '1' | '7' | '30' | 'all';
@@ -23,7 +24,7 @@ export const useHomeViewStore = create<HomeViewState>()(
         }),
         {
             name: 'home-view-options-storage',
-            storage: createJSONStorage(() => localStorage),
+            storage: createBrowserJSONStorage(),
             partialize: (state) => ({
                 rankSortMode: state.rankSortMode,
                 chartPeriod: state.chartPeriod,

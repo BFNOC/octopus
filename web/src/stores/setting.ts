@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { createBrowserJSONStorage } from '@/lib/storage';
 
 export type Locale = 'zh_hans' | 'zh_hant' | 'en';
 
@@ -16,7 +17,7 @@ export const useSettingStore = create<SettingState>()(
         }),
         {
             name: 'octopus-settings',
+            storage: createBrowserJSONStorage(),
         }
     )
 );
-

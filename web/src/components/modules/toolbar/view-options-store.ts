@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { createBrowserJSONStorage } from '@/lib/storage';
 
 export type ToolbarLayout = 'grid' | 'list';
 export type ToolbarSortOrder = 'asc' | 'desc';
@@ -81,6 +82,7 @@ export const useToolbarViewOptionsStore = create<ToolbarViewOptionsState>()(
         }),
         {
             name: 'toolbar-view-options-storage',
+            storage: createBrowserJSONStorage(),
             partialize: (state) => ({
                 layouts: state.layouts,
                 sortFields: state.sortFields,

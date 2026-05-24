@@ -7,7 +7,6 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Badge } from '@/components/ui/badge';
 import {
     Activity,
     Check,
@@ -16,7 +15,6 @@ import {
     Loader2,
     Search,
     Square,
-    X,
     XCircle,
     AlertTriangle,
     Ban,
@@ -237,7 +235,7 @@ export function ProbeModal({ open, onOpenChange, channel, channelIds, title }: P
 
     // Settings state
     const [prompt, setPrompt] = useState('');
-    const placeholderPrompt = useMemo(() => pickRandomProbePrompt(), [open]);
+    const placeholderPrompt = useMemo(() => (open ? pickRandomProbePrompt() : ''), [open]);
     const [concurrency, setConcurrency] = useState(3);
     const [timeoutMs, setTimeoutMs] = useState(30000);
     const [delayMs, setDelayMs] = useState(2000);
@@ -259,6 +257,12 @@ export function ProbeModal({ open, onOpenChange, channel, channelIds, title }: P
     const isProbing = isSSEProbing || isMultiProbing;
     const resultsRef = useRef(results);
     resultsRef.current = results;
+
+    const getMergedModels = useCallback(() => {
+        const manual = manualModels.split(/[,\n]/).map((s) => s.trim()).filter(Boolean);
+        const all = new Set([...selectedModels, ...manual]);
+        return Array.from(all).sort();
+    }, [selectedModels, manualModels]);
 
     // Open: reset / Close: abort
     useEffect(() => {
@@ -282,18 +286,20 @@ export function ProbeModal({ open, onOpenChange, channel, channelIds, title }: P
 
     // Build model rows when probing starts
     useEffect(() => {
-        if (isProbing && modelRows.length === 0) {
+        if (!isProbing) return;
+        setModelRows((prev) => {
+            if (prev.length > 0) return prev;
             const names = getMergedModels();
-            setModelRows(names.map((name) => ({
+            return names.map((name) => ({
                 name,
                 status: 'pending' as RowStatus,
                 ttftMs: 0,
                 httpStatus: 0,
                 error: '',
                 responseText: '',
-            })));
-        }
-    }, [isProbing]);
+            }));
+        });
+    }, [isProbing, getMergedModels]);
 
     // Update rows as results stream in
     useEffect(() => {
@@ -309,7 +315,7 @@ export function ProbeModal({ open, onOpenChange, channel, channelIds, title }: P
                         ttftMs: r.ttft_ms,
                         httpStatus: r.http_status,
                         error: r.error || '',
-                        responseText: (r as any).response_text || '',
+                        responseText: r.response_text || '',
                     };
                 }
             }
@@ -319,22 +325,20 @@ export function ProbeModal({ open, onOpenChange, channel, channelIds, title }: P
 
     // Mark remaining as inconclusive when probing ends
     useEffect(() => {
-        if (!isProbing && modelRows.length > 0) {
-            setModelRows((prev) =>
-                prev.map((row) =>
-                    row.status === 'pending' || row.status === 'probing'
-                        ? { ...row, status: 'inconclusive' as RowStatus, error: 'Stream ended unexpectedly' }
-                        : row
-                )
-            );
-        }
+        if (isProbing) return;
+        setModelRows((prev) => {
+            if (prev.length === 0) return prev;
+            let changed = false;
+            const next = prev.map((row) => {
+                if (row.status === 'pending' || row.status === 'probing') {
+                    changed = true;
+                    return { ...row, status: 'inconclusive' as RowStatus, error: 'Stream ended unexpectedly' };
+                }
+                return row;
+            });
+            return changed ? next : prev;
+        });
     }, [isProbing]);
-
-    const getMergedModels = useCallback(() => {
-        const manual = manualModels.split(/[,\n]/).map((s) => s.trim()).filter(Boolean);
-        const all = new Set([...selectedModels, ...manual]);
-        return Array.from(all).sort();
-    }, [selectedModels, manualModels]);
 
     const filteredModels = useMemo(() => {
         if (!modelSearch) return allModels;
@@ -353,7 +357,6 @@ export function ProbeModal({ open, onOpenChange, channel, channelIds, title }: P
 
     const toggleAll = () => {
         setSelectedModels((prev) => {
-            const visibleSet = new Set(filteredModels);
             const allSelected = filteredModels.every((m) => prev.has(m));
             if (allSelected) {
                 const next = new Set(prev);
@@ -456,7 +459,7 @@ export function ProbeModal({ open, onOpenChange, channel, channelIds, title }: P
                           setModelRows((prev) =>
                               prev.map((row) =>
                                   row.name === r.model_name
-                                      ? { ...row, status: r.status as RowStatus, ttftMs: r.ttft_ms, httpStatus: r.http_status, error: r.error || '', responseText: (r as any).response_text || '' }
+                                      ? { ...row, status: r.status as RowStatus, ttftMs: r.ttft_ms, httpStatus: r.http_status, error: r.error || '', responseText: r.response_text || '' }
                                       : row
                               )
                           );
@@ -683,7 +686,7 @@ export function ProbeModal({ open, onOpenChange, channel, channelIds, title }: P
 
                 {!hasResults && !isProbing && (
                     <div className="text-center text-sm text-muted-foreground py-8">
-                        选择模型后点击"开始探测"
+                        {'选择模型后点击"开始探测"'}
                     </div>
                 )}
             </DialogContent>
