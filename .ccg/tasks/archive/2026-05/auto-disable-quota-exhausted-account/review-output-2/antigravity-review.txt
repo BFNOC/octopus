@@ -1,0 +1,116 @@
+I received a notification that the background task (running the tests) is still in progress, but we can look at the log output to see if it finished. Let's run `manage_task` with action `status`.
+I received a notification that the background task is still in progress. Let's run `manage_task` with action `status` to see the current output.
+### 1. 整体评估 (Summary)
+本次复审的代码变更主要实现了**额度不足/余额不足时的自动禁用与降级处理**。上一轮审查中指出的 `sitesync` 继承禁用状态、`SiteToken` 禁用后刷新缓存与重置 `balancer`、收窄 `billing/quota` 信号等关键缺陷均已得到完备修复。系统结构清晰，设计合理。但是，在并发状态下的缓存/DB一致性以及防误禁规则的细节上，仍发现了一个较为关键的逻辑漏洞以及一些潜在的误禁风险。
+
+---
+
+### 2. 评分报告 (Review Report)
+
+```
+REVIEW REPORT
+=============
+Correctness:    22/25 - 核心禁用流程工作正常，但 ChannelKeyEnabled 中的 RowsAffected 判定在重复禁用时会导致缓存与 Balancer 无法同步重置。
+Security:       25/25 - 未发现安全漏洞，权限与数据范围隔离正确。
+Performance:    24/25 - 缓存更新与负载均衡器重置逻辑完整，但 ChannelKeyEnabled 逻辑缺陷可能在特定并发下引发短暂的不一致性路由。
+Maintainability: 24/25 - 代码解耦良好，上游错误分类与底层操作分离，新增了相应的单元测试和旧信号清理。
+
+TOTAL SCORE: 95/100
+
+FINDINGS:
+[Warning] internal/op/quota_disable.go:24 - RowsAffected == 0 的硬编码判断可能导致并发或重复禁用时缓存和 Balancer 状态不同步。
+[Warning] internal/upstreamerr/quota.go:44 - strings.Contains 对 "quota exceeded" 的全局匹配容易在 Gemini 等平台触发 429 临时限流时发生永久性误禁。
+[Info] internal/relay/relay_test.go:459 - 建议为 QuotaScopeKey（密钥级别禁用）补充对应的单测覆盖。
+[Info] internal/relay/relay.go:272 - 流式响应（Streaming SSE）中途断开时的额度报错不会触发自动禁用。
+
+VERDICT: REQUEST_CHANGES
+```
+
+---
+
+### 3. 详细发现 (Findings)
+
+#### 🔴 Critical Issues (必须修改)
+*   **未发现** Security、Data Loss 或 Breaking API 级别的 Critical 问题。
+
+---
+
+#### 🟡 Warnings (建议修改)
+
+##### ① 重复禁用/并发场景下可能导致 DB 与 Cache 不一致
+*   **文件与行号**: [internal/op/quota_disable.go:24-26](file:///Users/chaos/developments/github_go/octopus/internal/op/quota_disable.go#L24-L26)
+*   **问题描述**: 
+    在 `ChannelKeyEnabled` 函数中，使用 GORM 对 `model.ChannelKey` 执行更新操作：
+    ```go
+    result := db.GetDB().WithContext(ctx).
+        Model(&model.ChannelKey{}).
+        Where("id = ? AND channel_id = ?", keyID, channelID).
+        Update("enabled", enabled)
+    if result.Error != nil {
+        return result.Error
+    }
+    if result.RowsAffected == 0 {
+        return gorm.ErrRecordNotFound
+    }
+    ```
+    在并发请求或者先前已禁用的情况下，如果对同一个 `keyID` 再次执行 `enabled = false`，由于数据库记录的 `enabled` 字段已是 `false`，在 MySQL（未设置 `clientFoundRows=true` 时）或 SQLite 中，`result.RowsAffected` 会返回 `0`。
+    
+    一旦返回 `0`，该函数将直接抛出 `gorm.ErrRecordNotFound` 并提前终止，**导致后面的 `channelCache.Set` 缓存更新以及 `resetBalancerStateForChannel(channelID)` 被完全跳过**。这在并发请求下极易造成内存缓存与数据库状态不一致。
+*   **解决方案**: 
+    建议放宽或移除 `RowsAffected == 0` 的强一致性限制。因为将本已是 `false` 的 key 再次设为 `false` 是符合幂等性的。可以改为直接根据 `.Error` 进行判断，或仅在确定为 `true -> false` 时需要重置；更简单地，将 `RowsAffected == 0` 从错误检查中移除，仅用来做 debug 日志判定：
+    ```go
+    // 不应该把 RowsAffected == 0 视作 ErrRecordNotFound，因为可能已经是目标状态
+    ```
+
+##### ② 针对 Gemini 等平台的临时 429 限流存在误判定为永久禁用的风险
+*   **文件与行号**: [internal/upstreamerr/quota.go:44](file:///Users/chaos/developments/github_go/octopus/internal/upstreamerr/quota.go#L44)
+*   **问题描述**:
+    在 `keyQuotaSignals` 中包含了 `"quota exceeded"` 和 `"quota_exceeded"` 两个非常宽泛的字符串：
+    ```go
+    var keyQuotaSignals = []string{
+        "insufficient_quota",
+        "quota_exceeded",
+        "quota exceeded",
+        ...
+    }
+    ```
+    部分大模型提供商（特别是 **Gemini / Vertex AI**）在触发临时并发限流或每分钟请求限流（TPM/RPM 429）时，其返回的错误消息常包含 `"Quota exceeded for AI Core API"` 或 `"Resource has been exhausted (e.g. queries per minute limit ...)"`。
+    
+    这些错误在语义上是**临时速率限流 (Rate Limit)**，理应通过软限流进行自动指数退避重试，但在此处的匹配逻辑中，会被误判为 `QuotaScopeKey`（余额不足），从而**触发永久性的自动禁用**，给运维带来极大负担。
+*   **解决方案**:
+    在 `ClassifyQuotaExhaustion` 的起始位置，增加针对频率限制的排除规则（Exclusion Rules），如果检测到包含 `rate limit`, `rate_limit`, `per minute`, `rpm`, `tpm` 等敏感词，优先排除：
+    ```go
+    if strings.Contains(normalized, "rate limit") || strings.Contains(normalized, "rate_limit") || strings.Contains(normalized, "per minute") {
+        return QuotaDecision{}
+    }
+    ```
+
+---
+
+#### 🟢 Positive Notes (亮点与做工良好)
+*   **缓存同步完整性**：在 `SiteTokenEnabledForProjectedChannelKey` 函数内更新 `model.SiteToken` 时，完备地增加了 `channelRefreshCacheByID` 和 `resetBalancerStateForChannel` 的处理，完美解决了上一轮的缓存泄露隐患。
+*   **Sitesync 合并安全**：在 [internal/sitesync/storage.go:312](file:///Users/chaos/developments/github_go/octopus/internal/sitesync/storage.go#L312) 和 [334 行](file:///Users/chaos/developments/github_go/octopus/internal/sitesync/storage.go#L334) 等位置通过 `incoming.Enabled = incoming.Enabled && existing.Enabled` 实现的禁用状态继承设计得非常优雅，有效避免了定期同步导致已禁用 Token 被意外复活的问题。
+*   **死代码清理**：完美地从 `forbiddenBlockSignals` 和 `health.ClassifyFailure` 的 `hardSignals` 中清除了冗余的 `"billing"` 和 `"insufficient_quota"`，保持了核心链路的简洁。
+*   **集成测试表现良好**：新增的集成测试 `TestHandlerAutoDisablesManagedSiteAccountOnUserQuotaExhausted` 链路完整、覆盖全面，并且直接跑通了全量 `go test`，没有遗留任何编译或测试阻碍。
+
+---
+
+#### 🔵 Info (考虑项建议)
+
+##### ① 补充 Key Scope 的集成测试
+*   **文件与行号**: [internal/relay/relay_test.go:459](file:///Users/chaos/developments/github_go/octopus/internal/relay/relay_test.go#L459)
+*   **问题描述**: 
+    新增的 `TestHandlerAutoDisablesManagedSiteAccountOnUserQuotaExhausted` 测试了 `QuotaScopeAccount`。但建议可以在 `relay_test.go` 中补充一个类似的针对 `QuotaScopeKey` 级别的自动禁用测试（即捕获 `insufficient_quota` 只禁用对应的密钥而非站点账号），这能让单元测试的覆盖矩阵更加坚实。
+
+##### ② 流式请求（Streaming Response）中途断开时的额度报错处理
+*   **文件与行号**: [internal/relay/relay.go:272](file:///Users/chaos/developments/github_go/octopus/internal/relay/relay.go#L272)
+*   **问题描述**:
+    在流式请求中，由于 `maybeAutoDisableQuotaExhausted` 的调用条件中包含了 `!result.Written`。当上游在流响应中途由于达到账单 Hard Limit 或余额瞬间扣尽而发生异常断开时，因为 `Written` 已为 `true`，此时无法触发自动禁用逻辑。
+*   **说明**:
+    这是当前 HTTP 握手和代理机制上的固有设计限制，属于低概率场景，此处仅做架构上的提示，无需强行变更。
+
+---
+
+### 4. 结论 (Verdict)
+**`REQUEST_CHANGES` (需要微调)**
+强烈建议在合并前修复 **`ChannelKeyEnabled` 中的 RowsAffected 判定** 这一一致性缺陷，并针对 **`Gemini` 429 quota 信号** 做出排除以避免线上误禁。这两处修复对高可用系统的稳定性至关重要。

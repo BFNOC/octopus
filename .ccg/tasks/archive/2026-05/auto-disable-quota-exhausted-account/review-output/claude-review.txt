@@ -1,0 +1,62 @@
+## Review: 额度不足自动禁用 feature (quota auto-disable)
+
+### Critical 🔴
+
+- **[internal/op/quota_disable.go:57-101] `SiteTokenEnabledForProjectedChannelKey` 缺少缓存失效和 balancer 重置**
+  - 该函数更新了 DB 中 `SiteToken.enabled`，但没有像 `ChannelKeyEnabled`（同文件 28-54 行）那样更新 `channelCache`/`channelKeyCache`，也没有调用 `resetBalancerStateForChannel`。
+  - 禁用 source token 后，缓存中的旧数据会继续将流量路由到已禁用的 token，直到下一次缓存刷新。这在高并发场景下会造成请求失败持续一段时间。
+  - 建议：在 DB 更新成功后调用 `channelRefreshCacheByID` 或手动更新缓存，加上 `resetBalancerStateForChannel`。
+
+- **[internal/upstreamerr/quota.go:67-72] `billingQuotaSignals` 中 `"额度"` 和 `"余额"` 过于宽泛，存在误禁风险**
+  - `ClassifyQuotaExhaustion` 使用 `strings.Contains` 子串匹配。`"额度"` 可匹配 `"额度不够"`、`"额度不足"`、`"token额度限制"` 等；`"余额"` 可匹配 `"账户余额"`、`"余额不足"` 等。
+  - 虽然有 `billing` 前置守卫（29 行），但任何包含 `"billing"` 和 `"额度"`/`"余额"` 的非额度错误（如 `"billing: user context quota 额度 exceeded"`）都会被误判为 `QuotaScopeAccount`，触发自动禁用。
+  - 建议：考虑用更精确的短语（如 `"hard limit"` + `"额度"` 的组合匹配）或要求更严格的信号词。
+
+### Warning 🟡
+
+- **[internal/relay/degrade.go:58-63] `ShouldDegrade` 中 quota 分支丢弃了 Scope 信息**
+  - `ClassifyQuotaExhaustion` 返回的 `QuotaScope`（key vs account）被丢弃，统一返回 `Signal: "forbidden"`。这与 `quota_disable.go:31` 中保留 `decision.Signal` 和 `decision.Scope` 的做法不一致。
+  - 目前 `ShouldDegrade` 的调用方（`relay.go:326`）不使用 Scope 信息，所以不会造成运行时问题。但如果未来有调用方需要区分，这里会成为信息瓶颈。
+
+- **[internal/relay/degrade.go:31-37] `forbiddenBlockSignals` 中存在死代码**
+  - `"insufficient_user_quota"`（31）、`"insufficient_quota"`（32）、`"预扣费额度失败"`（35）、`"余额不足"`（36）在 `ClassifyQuotaExhaustion` 检查（58 行）之后，`forbiddenBlockSignals` 循环（67 行）中永远不会被命中。
+  - 建议：从 `forbiddenBlockSignals` 中移除这四个信号，或者在 `forbiddenBlockSignals` 循环之前加注释说明这些是 fallback。
+
+- **[internal/health/classifier.go:27-29, 42-51] `ClassifyFailure` 中 `hardSignals` 与 `upstreamerr.IsQuotaExhaustion` 存在重复**
+  - `upstreamerr.IsQuotaExhaustion` 已在 27 行提前返回 `FailureHard`，但 `hardSignals` 中仍然包含 `"insufficient_user_quota"`（47）和 `"insufficient_quota"`（48），这些永远无法被命中。
+  - 与 degrade.go 类似的死代码问题。
+
+- **[internal/upstreamerr/quota.go:19] `ClassifyQuotaExhaustion` 内部已做 `ToLower` + `TrimSpace`，但调用方重复做**
+  - `ShouldDegrade`（degrade.go:49）先 normalize 再传入；`health.ClassifyFailure`（classifier.go:25）也先 normalize 再调 `IsQuotaExhaustion`。虽然无害，但属于冗余处理。
+  - 建议：在 `ClassifyQuotaExhaustion` 的 godoc 中注明 "expects pre-normalized text" 或移除内部 normalize。
+
+### Info 🟢
+
+- **[internal/upstreamerr/quota.go:1-81] 信号词列表设计**
+  - `accountQuotaSignals` 中的中文信号（56-64 行）覆盖面较广，包括 `"剩余额度"`、`"可用余额不足"` 等。这些都是高置信度的额度信号，设计合理。
+  - `keyQuotaSignals` 中 `"额度不足"` 和 `"额度不够"` 也足够精确。整体信号列表设计良好。
+
+- **[internal/relay/quota_disable.go:26] `fmt.Sprintf("%v", err)` 的脆弱性**
+  - 当前上游错误通过 `fmt.Errorf("upstream error: %d: %s", statusCode, body)` 包装（compact.go:253），`%v` 能正确提取 response body。但如果未来包装格式变化，额度检测会静默失效。
+  - 不算 bug，但建议考虑对 error 做 `Unwrap` 链遍历或定义 `HasUpstreamBody() (string, bool)` 接口。
+
+- **[internal/relay/relay_test.go:462-571] 集成测试覆盖**
+  - 测试了完整的 account scope 禁用路径：创建 site → account → channel → binding → 发送请求 → 验证 account/channel/key 被禁用 → 验证第二次请求不再命中上游。
+  - 缺少 key scope（`QuotaScopeKey`）的测试场景。建议补充一个 `insufficient_quota` 触发 key 级禁用的测试用例。
+  - `TestHandlerAutoDisablesManagedSiteAccountOnUserQuotaExhausted` 验证了第二次请求不再命中上游（`hits.Load() != 1`），间接覆盖了缓存失效问题——但这只因为 channel key 已被禁用。如果 channel key 禁用逻辑有 bug，测试仍会通过。
+
+- **[internal/op/quota_disable.go:57-61] `SiteTokenEnabledForProjectedChannelKey` 提前返回逻辑**
+  - `err != nil || !managed` 时返回 `(false, binding, err)`。当 `!managed` 且 `err == nil` 时，返回 `nil` error 是正确的（表示"不是 managed channel，无需操作"）。调用方需注意 `disabled=false, err=nil` 不代表失败。
+
+### 总结
+
+整体架构设计清晰：`upstreamerr` 统一分类 → `relay/quota_disable` 执行自动禁用 → `op/quota_disable` 操作 DB/缓存。信号词覆盖全面，测试覆盖了主要路径。
+
+**需要修复的问题**：
+1. `SiteTokenEnabledForProjectedChannelKey` 缺少缓存失效（会导致禁用不生效）
+2. `billingQuotaSignals` 中 `"额度"`/`"余额"` 子串匹配可能误禁（需收紧匹配规则或增加二次确认）
+
+**建议清理**：`degrade.go` 和 `classifier.go` 中的 dead code（已被新逻辑覆盖的信号词）。
+
+---
+SESSION_ID: f8165224-4e98-498f-a940-5dfa58cf5cbb

@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	transformerModel "github.com/bestruirui/octopus/internal/transformer/model"
+	"github.com/bestruirui/octopus/internal/upstreamerr"
 	"github.com/bestruirui/octopus/internal/utils/log"
 )
 
@@ -166,9 +167,7 @@ func isUpstreamContextLimitError(message string) bool {
 }
 
 func isUpstreamQuotaError(message string) bool {
-	return strings.Contains(message, "insufficient_quota") ||
-		strings.Contains(message, "quota exceeded") ||
-		strings.Contains(message, "billing") && strings.Contains(message, "hard limit")
+	return upstreamerr.IsQuotaExhaustion(message)
 }
 
 func requiresUpstreamWSContinuation(req *transformerModel.InternalLLMRequest) bool {

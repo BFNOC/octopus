@@ -1,0 +1,49 @@
+Now I have a thorough understanding of all the changes. Let me compile the review.
+
+---
+
+## Review: 余额不足自动禁用 (Quota Exhaustion Auto-Disable)
+
+### Critical 🔴
+
+**无。**
+
+### Major 🟡
+
+**无。**
+
+### Minor 🟢
+
+- **`degrade.go:50-54`** — `forbiddenExclusions` 检查在 `ClassifyQuotaExhaustion` **之前**运行。如果上游错误同时包含排除项（如 `"token limit"`）和额度信号（如 `"余额不足"`），exclusion 会让 `ShouldDegrade` 返回 `false`，抑制降级。
+  - 当前实际无影响：`maybeAutoDisableQuotaExhausted` 在 relay 中独立运行，key/account 禁用不受 `ShouldDegrade` 结果影响；且额度信号和 model/context 错误几乎不会在同一条消息中共存。
+  - 建议：如需严格保证额度信号优先，可将 quota check 移到 exclusion check 之前。当前顺序在功能上 OK，但逻辑意图不明显，值得加一行注释说明 "exclusion 仅针对 forbidden block 信号，不抑制额度禁用"。
+
+- **`op/quota_disable.go:57`** — `SiteTokenEnabledForProjectedChannelKey` 函数名暗示 "查询/检查" 语义，实际会执行 `Update("enabled", enabled)` 写操作并刷新缓存。建议重命名为 `DisableSiteTokenForProjectedChannelKey` 或 `UpdateSiteTokenEnabledForProjectedChannelKey`，与 `ChannelKeyEnabled` 命名风格一致。
+
+- **`upstreamerr/quota.go:51-65`** — `accountQuotaSignals` 中 `"user_quota"`、`"account quota"`、`"额度不足"` 等信号较宽泛。虽然当前上游错误格式可控，但如果未来接入新的 upstream provider 返回包含这些子串的非额度相关错误，可能误触自动禁用。
+  - 当前风险低（`ClassifyQuotaExhaustion` 仅在 relay 失败路径调用，不会误判成功的请求）。
+  - 建议：后续可考虑对关键信号（如 `"余额不足"`）要求同时匹配 `"余额"` + `"不足"` 两个独立子串，或增加最少信号数阈值。
+
+- **`quota_disable.go:37-42`** — `ChannelKeyEnabled` 失败时（line 38-39），代码继续尝试 disable account/token。如果 account disable 成功但 key disable 失败，最终状态是：account 禁用 + key 仍启用。虽然 account 禁用会通过 `ProjectAccount` 级联禁用关联 channel，但 key 本身在 DB/cache 中仍为 enabled，属于不一致状态。
+  - 建议：考虑 key disable 失败时 early return 或至少在 result 中标记 partial failure。
+
+- **`upstreamerr/quota_test.go`** — 缺少以下边界场景的测试用例：
+  - 空字符串输入
+  - 同时包含 `"billing"` 和 `"quota"` 的消息（验证 `billing+quota` 路径）
+  - 同时包含额度信号和排除项（如 `"余额不足 model_not_found"`）的消息
+  - 纯 `"quota"` 子串（验证不会被 keyQuotaSignals 误匹配为 `QuotaScopeKey`）
+
+### Summary
+
+整体设计清晰，核心链路正确：
+1. **信号分类**：`upstreamerr.ClassifyQuotaExhaustion` 统一收口额度识别，`IsQuotaExhaustion` 复用一致。
+2. **自动禁用**：`maybeAutoDisableQuotaExhausted` 按 scope 逐级禁用 key → token → account，`ProjectAccount` 级联刷新。
+3. **状态合并**：`sitesync/storage.go` 的 `incoming.Enabled = incoming.Enabled && existing.Enabled` 正确防止 sync 覆盖已禁用状态。
+4. **缓存一致性**：`ChannelKeyEnabled` 先 DB 后 cache + balancer reset，失败时 fallback 到 `channelRefreshCacheByID`。
+5. **误禁保护**：`forbiddenExclusions` 隔离了 model/context 错误；`ClassifyQuotaExhaustion` 的信号列表区分了 account/key scope。
+6. **测试覆盖**：新增测试覆盖了主要场景（quota exhaustion auto-disable、disabled token 保留、quota error 识别）。
+
+**Approve** — 无阻塞问题，上述 minor 建议可后续跟进。
+
+---
+SESSION_ID: 9047a7af-69eb-4ef3-a9ac-3cde86b2f7c4

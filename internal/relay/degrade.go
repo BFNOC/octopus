@@ -1,6 +1,10 @@
 package relay
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/bestruirui/octopus/internal/upstreamerr"
+)
 
 // DegradeDecision 降级决策结果
 type DegradeDecision struct {
@@ -23,8 +27,6 @@ var DegradeMap = map[int]string{
 var forbiddenBlockSignals = []string{
 	"account_banned",
 	"account_suspended",
-	"billing",
-	"insufficient_quota",
 	"invalid_api_key",
 	"permission_denied",
 	"token_expired",
@@ -34,12 +36,23 @@ var forbiddenBlockSignals = []string{
 var forbiddenExclusions = []string{
 	"model_not_found",
 	"model_not_available",
+	"model_not_supported",
 	"context_length_exceeded",
+	"max_tokens",
+	"token limit",
 }
 
 // ShouldDegrade 判断是否应触发自动降级
 func ShouldDegrade(statusCode int, errText string) DegradeDecision {
 	normalized := strings.ToLower(strings.TrimSpace(errText))
+
+	if decision := upstreamerr.ClassifyQuotaExhaustion(normalized); decision.Scope != upstreamerr.QuotaScopeNone {
+		return DegradeDecision{
+			ShouldDegrade: true,
+			Reason:        "quota exhausted signal detected: " + decision.Signal,
+			Signal:        "forbidden",
+		}
+	}
 
 	// 检查排除列表
 	for _, exc := range forbiddenExclusions {

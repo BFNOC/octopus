@@ -272,6 +272,7 @@ func Handler(inboundType inbound.InboundType, c *gin.Context) {
 		if !result.Success && !result.Written && !result.Canceled && !result.ResetConversation {
 			failureKind := circuitFailureKind(group.RetryEnabled, result.StatusCode)
 			balancer.RecordFailure(channel.ID, usedKey.ID, internalRequest.Model, failureKind)
+			maybeAutoDisableQuotaExhausted(c.Request.Context(), channel, usedKey, result.StatusCode, result.Err)
 			if failureKind == balancer.FailureHard {
 				maybeLearnManagedRoute(c.Request.Context(), channel.ID, internalRequest.Model, inboundType, result.Err)
 			}
@@ -390,14 +391,14 @@ func Handler(inboundType inbound.InboundType, c *gin.Context) {
 		if lastResult.RetryAfter > 0 {
 			c.Header("Retry-After", fmt.Sprintf("%d", int(lastResult.RetryAfter.Seconds())))
 		}
-		hb.FlushOrError(c, lastResult.StatusCode, "channel failed")
+		hb.FlushOrError(c, lastResult.StatusCode, quotaFailurePublicMessage(lastErr))
 		return
 	}
 	if lastResult.StatusCode > 0 {
-		hb.FlushOrError(c, lastResult.StatusCode, "channel failed")
+		hb.FlushOrError(c, lastResult.StatusCode, quotaFailurePublicMessage(lastErr))
 		return
 	}
-	hb.FlushOrError(c, http.StatusBadGateway, "channel failed")
+	hb.FlushOrError(c, http.StatusBadGateway, quotaFailurePublicMessage(lastErr))
 }
 
 func circuitFailureKind(retryEnabled bool, statusCode int) balancer.FailureKind {

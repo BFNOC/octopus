@@ -1,6 +1,10 @@
 package health
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/bestruirui/octopus/internal/upstreamerr"
+)
 
 // FailureKind 失败类型枚举
 type FailureKind int
@@ -20,6 +24,10 @@ const (
 func ClassifyFailure(statusCode int, errorText string) FailureKind {
 	normalized := strings.ToLower(strings.TrimSpace(errorText))
 
+	if upstreamerr.IsQuotaExhaustion(normalized) {
+		return FailureHard
+	}
+
 	// 软限流：429 或 503
 	if statusCode == 429 || statusCode == 503 {
 		return FailureSoftRateLimit
@@ -35,8 +43,6 @@ func ClassifyFailure(statusCode int, errorText string) FailureKind {
 		"invalid_api_key",
 		"account_banned",
 		"account_suspended",
-		"billing",
-		"insufficient_quota",
 		"permission_denied",
 		"token_expired",
 		"authentication",

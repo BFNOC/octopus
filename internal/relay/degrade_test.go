@@ -64,10 +64,28 @@ func TestShouldDegrade(t *testing.T) {
 			want:       DegradeDecision{ShouldDegrade: true, Signal: "forbidden"},
 		},
 		{
+			name:       "forbidden signal - insufficient_user_quota",
+			statusCode: 400,
+			errText:    `{"code":"insufficient_user_quota"}`,
+			want:       DegradeDecision{ShouldDegrade: true, Signal: "forbidden"},
+		},
+		{
+			name:       "forbidden signal - chinese balance prepay failure",
+			statusCode: 403,
+			errText:    "预扣费额度失败, 用户剩余额度: $0.000950, 需要预扣费额度: $0.657850",
+			want:       DegradeDecision{ShouldDegrade: true, Signal: "forbidden"},
+		},
+		{
 			name:       "exclusion - model_not_found suppresses status code degradation",
 			statusCode: 403,
 			errText:    "model_not_found",
 			want:       DegradeDecision{ShouldDegrade: false},
+		},
+		{
+			name:       "quota signal wins over exclusion",
+			statusCode: 403,
+			errText:    "insufficient_quota token limit",
+			want:       DegradeDecision{ShouldDegrade: true, Signal: "forbidden"},
 		},
 		{
 			name:       "exclusion - context_length_exceeded",

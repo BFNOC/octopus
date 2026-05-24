@@ -189,6 +189,7 @@ func HandleResponsesCompact(c *gin.Context) {
 		op.StatsChannelUpdate(channel.ID, dbmodel.StatsMetrics{RequestFailed: 1})
 		failureKind := circuitFailureKind(group.RetryEnabled, statusCode)
 		balancer.RecordFailure(channel.ID, usedKey.ID, requestModel, failureKind)
+		maybeAutoDisableQuotaExhausted(c.Request.Context(), channel, usedKey, statusCode, attemptErr)
 		lastErr = attemptErr
 		lastStatusCode = statusCode
 		lastRetryAfter = retryAfter
@@ -203,14 +204,14 @@ func HandleResponsesCompact(c *gin.Context) {
 		if lastRetryAfter > 0 {
 			c.Header("Retry-After", fmt.Sprintf("%d", int(lastRetryAfter.Seconds())))
 		}
-		resp.Error(c, lastStatusCode, "channel failed")
+		resp.Error(c, lastStatusCode, quotaFailurePublicMessage(lastErr))
 		return
 	}
 	if lastStatusCode > 0 {
-		resp.Error(c, lastStatusCode, "channel failed")
+		resp.Error(c, lastStatusCode, quotaFailurePublicMessage(lastErr))
 		return
 	}
-	resp.Error(c, http.StatusBadGateway, "channel failed")
+	resp.Error(c, http.StatusBadGateway, quotaFailurePublicMessage(lastErr))
 }
 
 func supportsResponsesCompact(channelType outbound.OutboundType) bool {

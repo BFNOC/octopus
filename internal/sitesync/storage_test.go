@@ -102,6 +102,37 @@ func TestMergePersistedSiteTokensTreatsOptionalSKPrefixAsSameReadyToken(t *testi
 	}
 }
 
+func TestMergePersistedSiteTokensPreservesDisabledReadyToken(t *testing.T) {
+	now := time.Unix(1711929600, 0)
+	existing := []model.SiteToken{{
+		ID:            7,
+		SiteAccountID: 9,
+		Name:          "primary",
+		Token:         "sk-abc123",
+		GroupKey:      model.SiteDefaultGroupKey,
+		GroupName:     model.SiteDefaultGroupName,
+		Enabled:       false,
+		ValueStatus:   model.SiteTokenValueStatusReady,
+		Source:        "sync",
+	}}
+	incoming := []model.SiteToken{{
+		Name:      "primary",
+		Token:     "abc123",
+		GroupKey:  model.SiteDefaultGroupKey,
+		GroupName: model.SiteDefaultGroupName,
+		Enabled:   true,
+		Source:    "sync",
+	}}
+
+	merged := mergePersistedSiteTokens(9, existing, incoming, now)
+	if len(merged) != 1 {
+		t.Fatalf("expected exactly one merged token, got %+v", merged)
+	}
+	if merged[0].Enabled {
+		t.Fatalf("expected disabled ready token to remain disabled after sync merge")
+	}
+}
+
 func TestMergePersistedSiteTokensKeepsMaskedPendingWhenMatchIsAmbiguous(t *testing.T) {
 	now := time.Unix(1711929600, 0)
 	existing := []model.SiteToken{

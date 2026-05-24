@@ -1,0 +1,44 @@
+## Review: 最终复审 — 自动禁用额度耗尽账户/密钥
+
+### 上一轮修复验证
+
+**1. `ChannelKeyEnabled` 重复禁用 RowsAffected=0**
+- `internal/op/quota_disable.go:23-31`：当 `RowsAffected == 0` 时，执行 SELECT 检查 key 是否存在。若已存在（已禁用），**不 return**，继续走缓存刷新 + balancer reset。✅ 已修复。
+
+**2. Gemini/Vertex 临时 RPM/TPM rate limit 误判**
+- `internal/upstreamerr/quota.go:23`：`ClassifyQuotaExhaustion` 在匹配永久信号前先调用 `isTemporaryQuotaRateLimit`。
+- `quota_test.go` 用例 "gemini quota rate limit is not balance exhaustion"：`"Quota exceeded for AI Core API: requests per minute limit reached"` → `QuotaScopeNone`。✅ 已修复。
+
+**3. QuotaScopeKey 集成测试**
+- `relay_test.go` `TestHandlerAutoDisablesOnlyKeyOnGenericQuotaExhausted`：验证 generic `insufficient_quota` 仅禁用 key 不禁用 channel。✅ 已补充。
+
+---
+
+### Critical 🔴
+
+无阻塞问题。
+
+### Warning 🟡
+
+- **`internal/relay/degrade.go:36-43`** — `ShouldDegrade` 先检查 `forbiddenExclusions`，后检查 quota exhaustion。若某条错误同时包含 `"token limit"` 和 `"insufficient_quota"`（虽极不可能），exclusion 会压制 quota 检测，导致不降级。
+  - Why: 顺序是 exclusions → quota signals，exclusion 短路优先。
+  - 当前风险低，因为 `"token limit"` 和 `"insufficient_quota"` 几乎不会共存。记录为已知行为即可。
+
+- **`internal/relay/quota_disable.go:26,56`** — `ClassifyQuotaExhaustion(fmt.Sprintf("%v", err))` 在 line 26 已调用一次，在 `quotaFailurePublicMessage`（line 110）中又调用一次 `IsQuotaExhaustion`。双重 Sprintf + 线性扫描虽非性能瓶颈，但可考虑将 `decision` 透传。
+  - Why: 同一请求中对同一 error text 做两次 classify，略显冗余。
+  - Fix: 非阻塞，后续优化即可。
+
+### Info 🟢
+
+- **`internal/upstreamerr/quota.go:100`** — `"rpm"` 作为 3 字符信号存在极低概率子串误匹配（如 `"cramped"`）。API 错误消息中几乎不可能出现，但可考虑加词边界约束。
+- **`internal/sitesync/storage.go:312,334`** — sync merge 时 `incoming.Enabled = incoming.Enabled && existing.Enabled` 保留已禁用 token 状态。逻辑正确，测试 `TestMergePersistedSiteTokensPreservesDisabledReadyToken` 已覆盖。
+- **`internal/op/quota_disable.go:11`** — `ChannelKeyEnabled` 的 `ctx` 参数放在最后，与 Go 惯例（ctx 为首参数）不一致，但与同文件其他函数保持一致，可后续统一。
+
+### Summary
+
+上一轮提出的三个阻塞问题全部已修复：RowsAffected=0 不再跳过缓存/balancer、Gemini rate limit 不再误判为永久额度耗尽、QuotaScopeKey 有集成测试覆盖。`go test ./...` 通过。无 Critical 问题。
+
+**APPROVE**
+
+---
+SESSION_ID: bf20b2d9-2ea1-4462-b140-bb5fc865f3f4

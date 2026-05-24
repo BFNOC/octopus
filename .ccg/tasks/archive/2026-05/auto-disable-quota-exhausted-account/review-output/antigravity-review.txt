@@ -1,0 +1,129 @@
+I will execute a read-only command to see the currently staged/cached changes in git.
+I will run `git status` to see all the staged/modified files so that we can inspect them fully.
+I will list the contents of the project root to check if there is a `.context` directory.
+I will view the new file `internal/upstreamerr/quota.go` to inspect the quota error classification logic.
+I will view the contents of `internal/health/classifier.go`.
+I will view `internal/health/classifier_test.go` to understand how the classifier is tested and what cases it handles.
+I will view the contents of `internal/op/quota_disable.go` to see the business operation logic for disabling accounts and channels on quota exhaustion.
+I will perform a grep search for `channelCache` to see how the cache is implemented (in-memory or distributed).
+I will view the new file `internal/relay/quota_disable.go` to understand how the channel key and site accounts are disabled during request processing.
+I will search for `maybeAutoDisableQuotaExhausted` in the codebase to see how it's integrated and check if `err` or other parameters might be handled incorrectly.
+I will view `internal/relay/relay.go` around line 275 to inspect how the `maybeAutoDisableQuotaExhausted` is triggered.
+I will list files in `internal/health` to understand how the health status and classifier are used in the broader channel state management.
+I will view `internal/health/state.go` to see the logic that processes the health records.
+I will view `internal/health/buffer.go` to check what happens when `health.Record` is called.
+I will grep for `DeriveHealthState` to see how channel status is determined and if it automatically disables or degrades channels.
+I will run a search for `GetChannelSignal` to check where the health signals are queried.
+I will view `internal/relay/degrade.go` to see the logic for channel degradation and how it handles errors.
+I will view `internal/relay/degrade_test.go` to see what scenarios and behaviors the degradation logic is expected to handle and test.
+I will run a read-only git diff for `internal/relay/relay_test.go` to inspect the test changes.
+I will run a read-only git diff for `internal/relay/compact.go` to inspect changes in compact mode routing.
+I will run a read-only git diff for `internal/relay/relay.go` to inspect the other changes made to the main relay flow.
+I will run a read-only git diff for `internal/health/classifier.go` to inspect the changes.
+I will perform a search for references to `SiteToken` to verify if there's any caching associated with site tokens that needs invalidation or update.
+I will run a search for the implementation of `ProjectAccount` under `internal/sitesync` to see if there is any caching that needs to be invalidated when `SiteToken` or `SiteAccount` is modified.
+I will view the beginning of `internal/sitesync/project.go` to see the implementation details of `ProjectAccount`.
+I will search for `mergeReadyIncomingSiteToken` or `SiteToken` sync functions in the sitesync package to verify if the sync merging logic preserves the disabled status of SiteTokens when they are disabled via quota exhaustion.
+I will view `internal/sitesync/storage.go` to see the logic of `mergeReadyIncomingSiteToken`.
+I will view `internal/sitesync/storage.go` from line 240 to 290 to see how `mergeReadyIncomingSiteToken` is used and if the enabled status is preserved elsewhere.
+I will perform a search for where the incoming tokens are merged to understand if the `Enabled` status from database is completely lost during synchronization.
+I will view `internal/sitesync/storage.go` around line 341 to check `mergeMaskedIncomingSiteToken`.
+I will view `internal/sitesync/storage.go` from line 200 to 240 to check how `preparedExisting` and `incoming` tokens are processed before merging.
+I will view `internal/sitesync/storage.go` from line 380 to 420 to check the rest of `mergeMaskedIncomingSiteToken`.
+I will run a grep search for `channelKeyCache` to see its declaration and check if it's imported or defined correctly in the scope of `internal/op/quota_disable.go`.
+I will view `internal/op/channel.go` around the cache update logic to see if we need to set the update flag when modifying channel keys.
+I will search `internal/op/channel.go` to see if there's an existing update function for channel keys.
+```
+REVIEW REPORT
+=============
+Correctness:    21/25 - 自动禁用的托管站点账号令牌（SiteToken）在下一次 sitesync 同步周期中会被 incoming 覆盖重置为启用状态，导致自动禁用机制失效。
+Security:       25/25 - 未发现安全漏洞，对敏感凭证的传递和隔离处理得当，无 SQL 注入或越权风险。
+Performance:    24/25 - 实现路径清晰，但在禁用操作中直接同步写入数据库，绕过了原有的异步写入队列 channelKeyCacheNeedUpdate，可能带来微弱的数据库锁开销和潜在的一致性覆盖风险。
+Maintainability: 22/25 - 存在部分重复匹配特征（如 "billing"），且没有复用已有的 ChannelKeyUpdate 逻辑；排他性机制（forbiddenExclusions）覆盖不够全面。
+
+TOTAL SCORE: 92/100
+
+FINDINGS:
+[Critical] internal/sitesync/storage.go:292-339 - 站点同步合并逻辑未继承已禁用的 SiteToken 状态，导致同步后令牌被重新激活。
+[Warning] internal/health/classifier.go:46 & internal/relay/degrade.go:30 - "billing" 关键字过于宽泛，直接匹配硬失败与降级信号极易造成误判。
+[Info] internal/op/quota_disable.go:20 & internal/op/channel.go:104 - 绕过 channelKeyCacheNeedUpdate 异步保存队列直接操作 DB，存在并发更新覆盖的风险。
+[Info] internal/relay/degrade.go:41 - forbiddenExclusions 排除的异常特征不够完善，容易漏掉其他服务商的上下文/不支持错误导致误降级。
+
+VERDICT: REQUEST_CHANGES
+```
+
+---
+
+### 1. Summary (总体评估)
+本次暂存区的代码变更非常出色地构建了余额不足（Quota Exhaustion）的主动识别与自动禁用机制，在通道管理和托管账户隔离的设计上十分完整。然而，由于站点同步逻辑 `sitesync` 未将已禁用的本地 `SiteToken` 继承，导致在后台同步运行后，已被禁用的 Key 会被重新覆盖启用，这对于托管渠道是一个致命的缺陷，需要进行修复。
+
+---
+
+### 2. Critical Issues (必须修改)
+#### 🔄 站点同步合并逻辑覆盖已禁用状态 
+- **位置**: [internal/sitesync/storage.go:L292-339](file:///Users/chaos/developments/github_go/octopus/internal/sitesync/storage.go#L292-L339) (`mergeReadyIncomingSiteToken`)
+- **分析**: 
+  在 `SiteTokenEnabledForProjectedChannelKey` 中，系统成功将数据库中的 `SiteToken` 的 `enabled` 状态更新为了 `false`。然而，当后台 `sitesync` 定时任务（或用户手动触发同步）运行时，`mergeReadyIncomingSiteToken` 会被调用来合并从上游同步过来的新令牌。
+  在合并逻辑中，匹配到本地已有的 `existing` Token 时：
+  ```go
+  incoming.ID = existing.ID
+  incomingsToken := strings.TrimSpace(incoming.Token)
+  existingToken := strings.TrimSpace(existing.Token)
+  if existingToken != "" && existingToken != incomingsToken {
+      incoming.Token = existingToken
+  }
+  if existing.ID != 0 {
+      usedExistingIDs[existing.ID] = struct{}{}
+  }
+  return incoming
+  ```
+  此时 `incoming` 的 `Enabled` 默认值通常为 `true`。这里并没有像 `mergeMaskedIncomingSiteToken`（第 360 行、391 行）那样保留已有令牌的禁用状态：
+  ```go
+  incoming.Enabled = incoming.Enabled && existing.Enabled
+  ```
+  这就导致下一次同步周期到来后，数据库中的 `SiteToken` 将被重置为 `Enabled = true`。进而由于 `sitesync.ProjectAccount` 的自动投影，本地已被禁用的 `ChannelKey` 会被重新激活，使得自动禁用机制彻底失效。
+- **修复建议**: 
+  在 [internal/sitesync/storage.go:L315](file:///Users/chaos/developments/github_go/octopus/internal/sitesync/storage.go#L315) 之前，加入状态继承逻辑：
+  ```go
+  incoming.Enabled = incoming.Enabled && existing.Enabled
+  ```
+  同样，在第 336 行返回前也应确保继承该状态。
+
+---
+
+### 3. Warnings (建议修改)
+#### ⚠️ "billing" 匹配词过宽，存在误判风险
+- **位置**: 
+  - [internal/health/classifier.go:L46](file:///Users/chaos/developments/github_go/octopus/internal/health/classifier.go#L46) (`hardSignals`)
+  - [internal/relay/degrade.go:L30](file:///Users/chaos/developments/github_go/octopus/internal/relay/degrade.go#L30) (`forbiddenBlockSignals`)
+- **分析**:
+  直接使用字符串 `billing` 作为硬失败及直接降级的特征词风险很高。任何包含该子串的临时性报错（例如 `"failed to fetch billing status due to network timeout"` 或 `"billing system temporary unavailable"`）都会被直接归类为 `FailureHard`（硬失败），从而导致通道被直接隔离（Quarantined）或降级，造成误判。
+  实际上，在 [internal/upstreamerr/quota.go:L29](file:///Users/chaos/developments/github_go/octopus/internal/upstreamerr/quota.go#L29) 中，新引入的 `ClassifyQuotaExhaustion` 已经做出了安全且合理的二级匹配：只有当包含 `"billing"` 且同时包含 `"hard limit"`、`"quota"`、`"额度"`、`"余额"` 之一时，才会识别为余额耗尽。
+- **修复建议**:
+  建议在 `hardSignals` 和 `forbiddenBlockSignals` 中移除单纯的 `"billing"` 关键字，完全交由更加精准的 `upstreamerr.IsQuotaExhaustion(normalized)` 逻辑处理。
+
+---
+
+### 4. Positive Notes (做的好的地方)
+- **多层降级隔离设计**: 自动禁用功能从 Channel Key 逐步穿透到源托管 SiteToken 以及托管账户（SiteAccount），层层递进，并且通过 `sitesync.ProjectAccount` 进行受影响通道的级联处理，设计非常严谨。
+- **高测试覆盖**: 引入了单元测试 [internal/upstreamerr/quota_test.go](file:///Users/chaos/developments/github_go/octopus/internal/upstreamerr/quota_test.go) 和集成测试 [internal/relay/relay_test.go](file:///Users/chaos/developments/github_go/octopus/internal/relay/relay_test.go)，覆盖了核心报错识别及端到端的禁用断言。
+- **精细的错误排除特征**: 在 `degrade.go` 中设置了 `forbiddenExclusions`，避免了模型不存在、上下文超长等请求级错误（Client-side Error）导致通道降级，增加了系统的健壮性。
+
+---
+
+### 5. Info (其他反馈与重构建议)
+#### 💡 并发缓存更新与异步 DB 写入的一致性风险
+- **位置**: [internal/op/quota_disable.go:L17-26](file:///Users/chaos/developments/github_go/octopus/internal/op/quota_disable.go#L17-L26) (`ChannelKeyEnabled`)
+- **分析**:
+  `ChannelKeyEnabled` 是直接调用数据库的 `Update` 将 `enabled` 写入 DB，然后再手动同步更新了本地的 `channelCache` 和 `channelKeyCache`。
+  然而，在 [internal/op/channel.go:L126](file:///Users/chaos/developments/github_go/octopus/internal/op/channel.go#L126) 中，系统原有一套利用 `channelKeyCacheNeedUpdate` 队列进行批量异步保存的逻辑 `ChannelKeySaveDB`。
+  如果同一时间该 Key 在其他协程中被触发了属性变更（如统计指标、余额扣减），旧的 Key 实体可能已经被放入了 `channelKeyCacheNeedUpdate` 中等待写入。此时 `ChannelKeyEnabled` 绕过队列直接更新 DB，随后的 `ChannelKeySaveDB` 批量回写时可能携带旧的状态，导致 DB 状态被意外回写覆盖。
+- **建议**:
+  可以考虑在直接修改 DB 时，加锁并从 `channelKeyCacheNeedUpdate` 队列中移除对应的 ID，或者在 `ChannelKeyEnabled` 执行时同步刷新并发控制状态。
+
+#### 💡 细化 forbiddenExclusions
+- **位置**: [internal/relay/degrade.go:L41](file:///Users/chaos/developments/github_go/octopus/internal/relay/degrade.go#L41)
+- **分析**:
+  不同模型服务商在模型不支持或上下文超长时的错误用词不尽相同。例如 Anthropic Claude 可能会返回 `"model_not_supported"`，有的可能返回 `"max_tokens"` 限制。
+- **建议**:
+  在 `forbiddenExclusions` 中额外补充 `"model_not_supported"`、`"max_tokens"`、`"token limit"` 等字样，以防这些用户端输入错误在 403/400 状态码下意外触发通道降级。

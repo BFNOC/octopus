@@ -459,6 +459,179 @@ func TestHandlerFallsBackToNextChannelAfterFirstFailure(t *testing.T) {
 	}
 }
 
+func TestHandlerAutoDisablesManagedSiteAccountOnUserQuotaExhausted(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctx := setupRelayTestDB(t)
+
+	var hits atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = w.Write([]byte(`{"error":{"message":"预扣费额度失败, 用户剩余额度: $0.000950, 需要预扣费额度: $0.657850","type":"new_api_error","code":"insufficient_user_quota"}}`))
+	}))
+	defer server.Close()
+
+	site := &model.Site{
+		Name:     "relay-quota-site",
+		Platform: model.SitePlatformNewAPI,
+		SiteType: model.SiteTypePaid,
+		BaseURL:  server.URL,
+		Enabled:  true,
+	}
+	if err := op.SiteCreate(site, ctx); err != nil {
+		t.Fatalf("SiteCreate failed: %v", err)
+	}
+	account := &model.SiteAccount{
+		SiteID:         site.ID,
+		Name:           "default",
+		CredentialType: model.SiteCredentialTypeAPIKey,
+		APIKey:         "account-key",
+		Enabled:        true,
+	}
+	if err := op.SiteAccountCreate(account, ctx); err != nil {
+		t.Fatalf("SiteAccountCreate failed: %v", err)
+	}
+
+	channel := &model.Channel{
+		Name:     "relay-quota-managed-channel",
+		Type:     outbound.OutboundTypeOpenAIChat,
+		Enabled:  true,
+		BaseUrls: []model.BaseUrl{{URL: server.URL + "/v1"}},
+		Model:    "quota-model",
+		Keys:     []model.ChannelKey{{Enabled: true, ChannelKey: "quota-key"}},
+	}
+	if err := op.ChannelCreate(channel, ctx); err != nil {
+		t.Fatalf("ChannelCreate failed: %v", err)
+	}
+	binding := &model.SiteChannelBinding{
+		SiteID:        site.ID,
+		SiteAccountID: account.ID,
+		GroupKey:      model.SiteDefaultGroupKey,
+		ChannelID:     channel.ID,
+	}
+	if err := dbpkg.GetDB().WithContext(ctx).Create(binding).Error; err != nil {
+		t.Fatalf("create site channel binding failed: %v", err)
+	}
+
+	group := &model.Group{Name: "relay-quota-group", Mode: model.GroupModeFailover}
+	if err := op.GroupCreate(group, ctx); err != nil {
+		t.Fatalf("GroupCreate failed: %v", err)
+	}
+	if err := op.GroupItemAdd(&model.GroupItem{GroupID: group.ID, ChannelID: channel.ID, ModelName: "quota-model", Priority: 1, Weight: 1}, ctx); err != nil {
+		t.Fatalf("GroupItemAdd failed: %v", err)
+	}
+
+	makeRequest := func() *httptest.ResponseRecorder {
+		recorder := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(recorder)
+		c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(`{"model":"relay-quota-group","messages":[{"role":"user","content":"hello"}]}`))
+		c.Request.Header.Set("Content-Type", "application/json")
+		Handler(inbound.InboundTypeOpenAIChat, c)
+		return recorder
+	}
+
+	first := makeRequest()
+	if first.Code != http.StatusForbidden {
+		t.Fatalf("expected first quota failure to preserve upstream status, got %d body %s", first.Code, first.Body.String())
+	}
+	if !strings.Contains(first.Body.String(), quotaExhaustedPublicMessage) {
+		t.Fatalf("expected quota disable hint in response, got %s", first.Body.String())
+	}
+
+	refreshedAccount, err := op.SiteAccountGet(account.ID, ctx)
+	if err != nil {
+		t.Fatalf("SiteAccountGet failed: %v", err)
+	}
+	if refreshedAccount.Enabled {
+		t.Fatal("expected managed site account to be disabled")
+	}
+	refreshedChannel, err := op.ChannelGet(channel.ID, ctx)
+	if err != nil {
+		t.Fatalf("ChannelGet failed: %v", err)
+	}
+	if refreshedChannel.Enabled {
+		t.Fatal("expected projected managed channel to be disabled")
+	}
+	if len(refreshedChannel.Keys) == 0 || refreshedChannel.Keys[0].Enabled {
+		t.Fatalf("expected triggered channel key to be disabled, got %#v", refreshedChannel.Keys)
+	}
+
+	second := makeRequest()
+	if second.Code == http.StatusOK {
+		t.Fatalf("expected disabled account/channel to prevent a successful retry, got %d body %s", second.Code, second.Body.String())
+	}
+	if hits.Load() != 1 {
+		t.Fatalf("expected second request not to hit upstream after auto-disable, got %d hits", hits.Load())
+	}
+}
+
+func TestHandlerAutoDisablesOnlyKeyOnGenericQuotaExhausted(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctx := setupRelayTestDB(t)
+
+	var hits atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = w.Write([]byte(`{"error":{"message":"insufficient_quota","code":"insufficient_quota"}}`))
+	}))
+	defer server.Close()
+
+	channel := &model.Channel{
+		Name:     "relay-quota-key-channel",
+		Type:     outbound.OutboundTypeOpenAIChat,
+		Enabled:  true,
+		BaseUrls: []model.BaseUrl{{URL: server.URL + "/v1"}},
+		Model:    "quota-key-model",
+		Keys:     []model.ChannelKey{{Enabled: true, ChannelKey: "quota-key"}},
+	}
+	if err := op.ChannelCreate(channel, ctx); err != nil {
+		t.Fatalf("ChannelCreate failed: %v", err)
+	}
+
+	group := &model.Group{Name: "relay-quota-key-group", Mode: model.GroupModeFailover}
+	if err := op.GroupCreate(group, ctx); err != nil {
+		t.Fatalf("GroupCreate failed: %v", err)
+	}
+	if err := op.GroupItemAdd(&model.GroupItem{GroupID: group.ID, ChannelID: channel.ID, ModelName: "quota-key-model", Priority: 1, Weight: 1}, ctx); err != nil {
+		t.Fatalf("GroupItemAdd failed: %v", err)
+	}
+
+	makeRequest := func() *httptest.ResponseRecorder {
+		recorder := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(recorder)
+		c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(`{"model":"relay-quota-key-group","messages":[{"role":"user","content":"hello"}]}`))
+		c.Request.Header.Set("Content-Type", "application/json")
+		Handler(inbound.InboundTypeOpenAIChat, c)
+		return recorder
+	}
+
+	first := makeRequest()
+	if first.Code != http.StatusForbidden {
+		t.Fatalf("expected first quota failure to preserve upstream status, got %d body %s", first.Code, first.Body.String())
+	}
+	refreshedChannel, err := op.ChannelGet(channel.ID, ctx)
+	if err != nil {
+		t.Fatalf("ChannelGet failed: %v", err)
+	}
+	if !refreshedChannel.Enabled {
+		t.Fatal("expected generic key quota to leave channel enabled")
+	}
+	if len(refreshedChannel.Keys) == 0 || refreshedChannel.Keys[0].Enabled {
+		t.Fatalf("expected generic key quota to disable only the key, got %#v", refreshedChannel.Keys)
+	}
+
+	second := makeRequest()
+	if second.Code == http.StatusOK {
+		t.Fatalf("expected disabled key to prevent a successful retry, got %d body %s", second.Code, second.Body.String())
+	}
+	if hits.Load() != 1 {
+		t.Fatalf("expected second request not to hit upstream after key auto-disable, got %d hits", hits.Load())
+	}
+}
+
 func TestHandlerAppliesChannelParamOverride(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	ctx := setupRelayTestDB(t)
