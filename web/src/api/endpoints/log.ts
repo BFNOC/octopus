@@ -1,5 +1,5 @@
 import type { InfiniteData } from '@tanstack/react-query';
-import { useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { keepPreviousData, useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiClient, API_BASE_URL } from '../client';
 import { logger } from '@/lib/logger';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -33,6 +33,25 @@ export interface ChannelAttempt {
 /**
  * 日志数据
  */
+export interface LogSiteActionTarget {
+    site_id: number;
+    site_name: string;
+    account_id: number;
+    account_name: string;
+    group_key: string;
+    group_name: string;
+    model_name: string;
+    model_disabled: boolean;
+    can_disable_model: boolean;
+    channel_id: number;
+    channel_name: string;
+}
+
+export interface LogSiteActionTargets {
+    attempt_targets: Array<LogSiteActionTarget | null>;
+    legacy_error_target?: LogSiteActionTarget | null;
+}
+
 export interface RelayLog {
     id: number;
     time: number;                // 时间戳
@@ -61,14 +80,108 @@ export interface RelayLog {
     ws_recovery?: RelayLogWSRecovery | null; // 本次请求触发的恢复动作
 }
 
+export type LogStatusFilter = 'all' | 'success' | 'error';
+
 /**
  * 日志列表查询参数
  */
+export type LogKeywordScope = 'default' | 'content';
+export type LogKeywordMode = 'default' | 'prefix' | 'exact' | 'contains';
+export type LogPaginationMode = 'cursor' | 'page';
+
+export interface LogCursor {
+    time: number;
+    id: number;
+}
+
 export interface LogListParams {
     page?: number;
     page_size?: number;
+    limit?: number;
+    before_time?: number;
+    before_id?: number;
     start_time?: number;
     end_time?: number;
+    channel_ids?: number[];
+    status?: LogStatusFilter;
+    keyword?: string;
+    keyword_scope?: LogKeywordScope;
+    keyword_mode?: LogKeywordMode;
+    pagination?: LogPaginationMode;
+    include_content?: boolean;
+    with_total?: boolean;
+    enabled?: boolean;
+}
+
+export interface UseLogsOptions {
+    pageSize?: number;
+    filters?: Omit<LogListParams, 'page' | 'page_size'>;
+    mode?: 'stream' | 'paged';
+}
+
+const logFiltersKey = (filters?: UseLogsOptions['filters']) => ({
+    start_time: filters?.start_time ?? null,
+    end_time: filters?.end_time ?? null,
+    channel_ids: filters?.channel_ids?.filter((id) => id > 0).sort((a, b) => a - b) ?? [],
+    status: filters?.status && filters.status !== 'all' ? filters.status : 'all',
+    keyword: filters?.keyword?.trim() ?? '',
+    keyword_scope: filters?.keyword_scope ?? 'default',
+    keyword_mode: filters?.keyword_mode ?? 'default',
+});
+
+function appendLogListParams(params: URLSearchParams, filters?: UseLogsOptions['filters']) {
+    if (filters?.start_time) params.set('start_time', String(filters.start_time));
+    if (filters?.end_time) params.set('end_time', String(filters.end_time));
+    const channelIds = filters?.channel_ids?.filter((id) => id > 0) ?? [];
+    if (channelIds.length > 0) params.set('channel_ids', channelIds.join(','));
+    if (filters?.status && filters.status !== 'all') params.set('status', filters.status);
+    const keyword = filters?.keyword?.trim();
+    if (keyword) params.set('keyword', keyword);
+    if (filters?.keyword_scope && filters.keyword_scope !== 'default') params.set('keyword_scope', filters.keyword_scope);
+    if (filters?.keyword_mode && filters.keyword_mode !== 'default') params.set('keyword_mode', filters.keyword_mode);
+}
+
+export interface LogPageResponse {
+    logs: RelayLog[];
+    total: number;
+    has_more?: boolean;
+    next_cursor?: LogCursor | null;
+    search_mode?: string;
+    warning?: string;
+}
+
+export function useLogPage(params: LogListParams) {
+    const page = params.page ?? 1;
+    const pageSize = params.page_size ?? 20;
+    const filters = logFiltersKey(params);
+
+    return useQuery({
+        queryKey: ['logs', 'page', pageSize, page, filters],
+        queryFn: async (): Promise<LogPageResponse> => {
+            const search = new URLSearchParams();
+            search.set('page', String(page));
+            search.set('page_size', String(pageSize));
+            search.set('include_content', String(params.include_content ?? false));
+            search.set('with_total', String(params.with_total ?? true));
+            appendLogListParams(search, params);
+            const result = await apiClient.get<{ logs: RelayLog[] | null; total: number; has_more?: boolean; next_cursor?: LogCursor | null; warning?: string; search_mode?: string } | null>(
+                `/api/v1/log/list?${search.toString()}`,
+            );
+            return {
+                logs: result?.logs ?? [],
+                total: result?.total ?? 0,
+                has_more: result?.has_more ?? false,
+                next_cursor: result?.next_cursor ?? null,
+                warning: result?.warning,
+                search_mode: result?.search_mode,
+            };
+        },
+        placeholderData: keepPreviousData,
+        staleTime: 0,
+        refetchOnMount: 'always',
+        refetchOnWindowFocus: false,
+        enabled: params.enabled ?? true,
+    });
 }
 
 /**
@@ -79,6 +192,36 @@ export interface LogListParams {
  * 
  * clearLogs.mutate();
  */
+export async function getLogDetail(id: number): Promise<RelayLog> {
+    return apiClient.get<RelayLog>(`/api/v1/log/${id}`);
+}
+
+export function useLogSiteActionTargets(ids: number[], enabled = true) {
+    const stableIds = useMemo(() => Array.from(new Set(ids.filter((id) => id > 0))).sort((a, b) => a - b), [ids]);
+    return useQuery({
+        queryKey: ['logs', 'site-action-targets', stableIds],
+        queryFn: async () => {
+            if (stableIds.length === 0) return {} as Record<number, LogSiteActionTargets>;
+            const chunkSize = 100;
+            const chunks: number[][] = [];
+            for (let i = 0; i < stableIds.length; i += chunkSize) {
+                chunks.push(stableIds.slice(i, i + chunkSize));
+            }
+            const results = await Promise.all(
+                chunks.map((chunk) =>
+                    apiClient.get<Record<number, LogSiteActionTargets>>(
+                        `/api/v1/log/site-action-targets?ids=${chunk.join(',')}`,
+                    ),
+                ),
+            );
+            return Object.assign({}, ...results) as Record<number, LogSiteActionTargets>;
+        },
+        enabled: enabled && stableIds.length > 0,
+        staleTime: 30000,
+        refetchOnWindowFocus: false,
+    });
+}
+
 export function useClearLogs() {
     const queryClient = useQueryClient();
 
@@ -96,7 +239,7 @@ export function useClearLogs() {
     });
 }
 
-const logsInfiniteQueryKey = (pageSize: number) => ['logs', 'infinite', pageSize] as const;
+const logsInfiniteQueryKey = (pageSize: number, filters?: UseLogsOptions['filters']) => ['logs', 'infinite', pageSize, logFiltersKey(filters)] as const;
 
 /**
  * 日志管理 Hook
@@ -111,8 +254,9 @@ const logsInfiniteQueryKey = (pageSize: number) => ['logs', 'infinite', pageSize
  * // 滚动到底部时加载更多
  * if (hasMore && !isLoadingMore) loadMore();
  */
-export function useLogs(options: { pageSize?: number } = {}) {
-    const { pageSize = 20 } = options;
+export function useLogs(options: UseLogsOptions = {}) {
+    const { pageSize = 20, filters, mode = 'stream' } = options;
+    const streamEnabled = mode === 'stream';
 
     const [isConnected, setIsConnected] = useState(false);
     const [error, setError] = useState<Error | null>(null);
@@ -120,23 +264,40 @@ export function useLogs(options: { pageSize?: number } = {}) {
 
     const queryClient = useQueryClient();
 
+    type CursorPage = { logs: RelayLog[]; next_cursor?: LogCursor | null; has_more: boolean; warning?: string; search_mode?: string };
+
     const logsQuery = useInfiniteQuery({
-        queryKey: logsInfiniteQueryKey(pageSize),
-        initialPageParam: 1,
+        queryKey: logsInfiniteQueryKey(pageSize, filters),
+        initialPageParam: null as LogCursor | null,
         queryFn: async ({ pageParam }) => {
             const params = new URLSearchParams();
-            params.set('page', String(pageParam));
-            params.set('page_size', String(pageSize));
-            const result = await apiClient.get<RelayLog[] | null>(`/api/v1/log/list?${params.toString()}`);
-            return result ?? [];
+            params.set('limit', String(pageSize));
+            params.set('with_total', 'false');
+            params.set('include_content', 'false');
+            params.set('pagination', 'cursor');
+            if (pageParam?.time && pageParam?.id) {
+                params.set('before_time', String(pageParam.time));
+                params.set('before_id', String(pageParam.id));
+            }
+            appendLogListParams(params, filters);
+            const result = await apiClient.get<{ logs: RelayLog[] | null; has_more?: boolean; next_cursor?: LogCursor | null; warning?: string; search_mode?: string } | null>(
+                `/api/v1/log/list?${params.toString()}`,
+            );
+            return {
+                logs: result?.logs ?? [],
+                has_more: result?.has_more ?? false,
+                next_cursor: result?.next_cursor ?? null,
+                warning: result?.warning,
+                search_mode: result?.search_mode,
+            } satisfies CursorPage;
         },
-        getNextPageParam: (lastPage, allPages) => {
-            if (!lastPage || lastPage.length < pageSize) return undefined;
-            return allPages.length + 1;
+        getNextPageParam: (lastPage) => {
+            if (!lastPage?.has_more) return undefined;
+            return lastPage.next_cursor ?? undefined;
         },
         staleTime: 0,
         refetchOnMount: 'always',
-        refetchOnWindowFocus: true,
+        refetchOnWindowFocus: streamEnabled,
     });
 
     const logs = useMemo(() => {
@@ -145,7 +306,7 @@ export function useLogs(options: { pageSize?: number } = {}) {
         const merged: RelayLog[] = [];
 
         for (const page of pages) {
-            for (const log of page) {
+            for (const log of page.logs) {
                 if (seen.has(log.id)) continue;
                 seen.add(log.id);
                 merged.push(log);
@@ -168,6 +329,12 @@ export function useLogs(options: { pageSize?: number } = {}) {
     }, [logsQuery]);
 
     useEffect(() => {
+        if (!streamEnabled) {
+            eventSourceRef.current?.close();
+            eventSourceRef.current = null;
+            return;
+        }
+
         let cancelled = false;
         let retryTimer: ReturnType<typeof setTimeout> | null = null;
         let retryAttempt = 0;
@@ -195,7 +362,7 @@ export function useLogs(options: { pageSize?: number } = {}) {
                     setIsConnected(true);
                     setError(null);
                     if (isReconnect) {
-                        queryClient.invalidateQueries({ queryKey: logsInfiniteQueryKey(pageSize) });
+                        queryClient.invalidateQueries({ queryKey: logsInfiniteQueryKey(pageSize, filters) });
                     }
                 };
 
@@ -203,26 +370,22 @@ export function useLogs(options: { pageSize?: number } = {}) {
                     try {
                         const log: RelayLog = JSON.parse(event.data);
                         queryClient.setQueryData(
-                            logsInfiniteQueryKey(pageSize),
-                            (old: InfiniteData<RelayLog[], number> | undefined) => {
+                            logsInfiniteQueryKey(pageSize, filters),
+                            (old: InfiniteData<CursorPage, LogCursor | null> | undefined) => {
                                 if (!old) {
-                                    return { pages: [[log]], pageParams: [1] };
+                                    return { pages: [{ logs: [log], has_more: false, next_cursor: null }], pageParams: [null] };
                                 }
 
-                                const exists = old.pages.some((p) => p?.some((x) => x.id === log.id));
+                                const exists = old.pages.some((p) => p?.logs.some((x) => x.id === log.id));
                                 if (exists) return old;
 
-                                const firstPage = old.pages[0] ?? [];
-                                const prepended = [log, ...firstPage];
+                                const firstPage = old.pages[0] ?? { logs: [], has_more: false, next_cursor: null };
+                                const prepended = [log, ...firstPage.logs];
+                                const nextFirstPage = { ...firstPage, logs: prepended.slice(0, pageSize) };
                                 if (prepended.length > pageSize && old.pages.length > 1) {
-                                    // 首页溢出：截断到 pageSize，后续分页可能已偏移，触发重拉
-                                    queryClient.invalidateQueries({ queryKey: logsInfiniteQueryKey(pageSize) });
-                                    return {
-                                        ...old,
-                                        pages: [prepended.slice(0, pageSize), ...old.pages.slice(1)],
-                                    };
+                                    queryClient.invalidateQueries({ queryKey: logsInfiniteQueryKey(pageSize, filters) });
                                 }
-                                return { ...old, pages: [prepended, ...old.pages.slice(1)] };
+                                return { ...old, pages: [nextFirstPage, ...old.pages.slice(1)] };
                             }
                         );
                     } catch (e) {
@@ -254,20 +417,24 @@ export function useLogs(options: { pageSize?: number } = {}) {
             eventSourceRef.current = null;
             setIsConnected(false);
         };
-    }, [pageSize, queryClient]);
+    }, [pageSize, filters, queryClient, streamEnabled]);
 
     const clear = useCallback(() => {
-        queryClient.removeQueries({ queryKey: logsInfiniteQueryKey(pageSize) });
-    }, [pageSize, queryClient]);
+        queryClient.removeQueries({ queryKey: logsInfiniteQueryKey(pageSize, filters) });
+    }, [pageSize, filters, queryClient]);
 
     return {
         logs,
-        isConnected,
-        error,
+        isConnected: streamEnabled && isConnected,
+        error: streamEnabled ? error : null,
         hasMore: !!logsQuery.hasNextPage,
         isLoading: logsQuery.isLoading,
         isLoadingMore: logsQuery.isFetchingNextPage,
+        refetch: logsQuery.refetch,
+        isRefetching: logsQuery.isRefetching,
         loadMore,
         clear,
+        warning: logsQuery.data?.pages?.[0]?.warning ?? null,
+        searchMode: logsQuery.data?.pages?.[0]?.search_mode ?? null,
     };
 }

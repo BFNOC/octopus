@@ -127,6 +127,7 @@ import {
     getErrorMessage,
     hasSourceKeyChanges,
     isMaskedTokenValue,
+    matchesMaskedToken,
     isSameGroupFilter,
     platformLabel,
     routeSourceLabel,
@@ -135,7 +136,6 @@ import {
 } from './utils';
 import { useJumpStore, type JumpTarget, type PendingJump, type SiteChannelJumpTarget, isSiteChannelJumpTarget } from '@/stores/jump';
 import { useEnableSiteAccount, useSyncSiteAccount } from '@/api/endpoints/site';
-import { AutoGroupType } from '@/api/endpoints/channel';
 import {
     DEFAULT_SITE_CHANNEL_PANEL_PREFERENCES,
     type SiteChannelQuickFilter,
@@ -289,6 +289,13 @@ function UnifiedCompletionDialog({
                 setAccountErrors((current) => ({
                     ...current,
                     [accountKey]: `分组「${item.group_name || item.group_key}」仍是脱敏值，必须填写完整 Key`,
+                }));
+                return;
+            }
+            if (!matchesMaskedToken(value, item.token)) {
+                setAccountErrors((current) => ({
+                    ...current,
+                    [accountKey]: `分组「${item.group_name || item.group_key}」的 Key 与已同步的脱敏值不匹配，请核对输入`,
                 }));
                 return;
             }
@@ -1226,7 +1233,7 @@ function SiteAccountPanel({
     const [editingProjectedGroup, setEditingProjectedGroup] = useState<SiteChannelGroup | null>(null);
     const [editingAdvancedGroup, setEditingAdvancedGroup] = useState<SiteChannelGroup | null>(null);
     const [selectedAdvancedChannelId, setSelectedAdvancedChannelId] = useState<number | null>(null);
-    const [advancedForm, setAdvancedForm] = useState<Record<number, { auto_group: AutoGroupType; param_override: string }>>({});
+    const [advancedForm, setAdvancedForm] = useState<Record<number, { param_override: string }>>({});
     const [addingManualGroup, setAddingManualGroup] = useState<SiteChannelGroup | null>(null);
     const [manualModelsInput, setManualModelsInput] = useState('');
     const [manualModelRouteType, setManualModelRouteType] = useState<SiteModelRouteType>('openai_chat');
@@ -1543,10 +1550,9 @@ function SiteAccountPanel({
     };
 
     const handleOpenAdvancedSettings = (group: SiteChannelGroup) => {
-        const form: Record<number, { auto_group: AutoGroupType; param_override: string }> = {};
+        const form: Record<number, { param_override: string }> = {};
         group.projected_channels.forEach((channel) => {
             form[channel.channel_id] = {
-                auto_group: channel.auto_group,
                 param_override: channel.param_override ?? '',
             };
         });
@@ -1618,17 +1624,10 @@ function SiteAccountPanel({
         });
     };
 
-    const handleAdvancedAutoGroupChange = (channelId: number, value: AutoGroupType) => {
-        setAdvancedForm((current) => ({
-            ...current,
-            [channelId]: { ...(current[channelId] ?? { auto_group: AutoGroupType.None, param_override: '' }), auto_group: value },
-        }));
-    };
-
     const handleAdvancedParamChange = (channelId: number, value: string) => {
         setAdvancedForm((current) => ({
             ...current,
-            [channelId]: { ...(current[channelId] ?? { auto_group: AutoGroupType.None, param_override: '' }), param_override: value },
+            [channelId]: { ...(current[channelId] ?? { param_override: '' }), param_override: value },
         }));
     };
 
@@ -1655,21 +1654,21 @@ function SiteAccountPanel({
     const handleSaveAdvancedSettings = () => {
         if (!editingAdvancedGroup) return;
         if (!validateAdvancedSettings()) {
-            toast.error('参数覆盖必须是合法的 JSON 对象');
+            toast.error(t('siteChannel.advanced.invalidParamOverride'));
             return;
         }
         const payload = editingAdvancedGroup.projected_channels.map((channel) => ({
             channel_id: channel.channel_id,
-            auto_group: advancedForm[channel.channel_id]?.auto_group ?? channel.auto_group,
+            auto_group: channel.auto_group,
             param_override: advancedForm[channel.channel_id]?.param_override?.trim() ?? '',
         }));
         advancedMutation.mutate(payload, {
             onSuccess: () => {
-                toast.success('高级设置已保存');
+                toast.success(t('siteChannel.advanced.saved'));
                 handleCloseAdvancedSettings();
             },
             onError: (error) => {
-                toast.error(translateSiteError(error, '保存高级设置失败'));
+                toast.error(translateSiteError(error, t('siteChannel.advanced.saveFailed')));
             },
         });
     };
@@ -1707,6 +1706,24 @@ function SiteAccountPanel({
 
     const handleSaveProjectedKeys = () => {
         if (!editingProjectedGroup) return;
+        const originalById = new Map(editingProjectedGroup.source_keys.map((key) => [key.id, key] as const));
+        for (const item of sourceKeyForm) {
+            if (!item.id) continue;
+            const original = originalById.get(item.id);
+            if (!original) continue;
+            if (original.value_status !== 'masked_pending') continue;
+            const trimmed = item.token.trim();
+            if (trimmed === (original.token ?? '').trim()) continue;
+            if (!trimmed) continue;
+            if (isMaskedTokenValue(trimmed)) {
+                toast.error(`Key #${item.id} 仍是脱敏值，必须填写完整 Key`);
+                return;
+            }
+            if (!matchesMaskedToken(trimmed, original.token)) {
+                toast.error(`Key #${item.id} 与已同步的脱敏值不匹配，请核对输入`);
+                return;
+            }
+        }
         const payload = buildSourceKeyUpdatePayload(editingProjectedGroup.group_key, editingProjectedGroup.source_keys, sourceKeyForm);
         if (!payload.keys_to_add?.length && !payload.keys_to_update?.length && !payload.keys_to_delete?.length) {
             toast.error('没有需要保存的 Key 变更');
@@ -2203,21 +2220,15 @@ function SiteAccountPanel({
             <Dialog open={!!editingAdvancedGroup} onOpenChange={(open) => !open && handleCloseAdvancedSettings()}>
                 <DialogContent className="max-h-[85vh] overflow-y-auto rounded-3xl sm:max-w-4xl">
                     <DialogHeader>
-                        <DialogTitle>站点渠道高级设置</DialogTitle>
+                        <DialogTitle>{t('siteChannel.advanced.title')}</DialogTitle>
                         <DialogDescription>
-                            配置分组 {editingAdvancedGroup?.group_name || editingAdvancedGroup?.group_key || '-'} 下各投影渠道的自动分组和参数覆盖。自定义 Header 请在站点设置中统一配置。
+                            {t('siteChannel.advanced.description', { group: editingAdvancedGroup?.group_name || editingAdvancedGroup?.group_key || '-' })}
                         </DialogDescription>
                     </DialogHeader>
                     <div className="space-y-4">
-                        {editingAdvancedGroup?.projected_channels.some((channel) => channel.global_override) ? (
-                            <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs leading-relaxed text-amber-800 dark:text-amber-200">
-                                全局投影渠道自动分组已开启，当前所有投影渠道会统一使用模糊匹配；这里保存的单独设置会在全局关闭后生效。
-                            </div>
-                        ) : null}
-
                         <div className="grid gap-4 lg:grid-cols-[16rem_1fr]">
                             <div className="space-y-2">
-                                <div className="px-1 text-xs font-medium text-muted-foreground">投影渠道</div>
+                                <div className="px-1 text-xs font-medium text-muted-foreground">{t('siteChannel.advanced.channelList')}</div>
                                 <div className="space-y-2">
                                     {editingAdvancedGroup?.projected_channels.map((channel) => {
                                         const active = selectedAdvancedChannel?.channel_id === channel.channel_id;
@@ -2237,9 +2248,6 @@ function SiteAccountPanel({
                                                     <div className="truncate text-sm font-medium">{routeTypeLabel(channel.route_type)}</div>
                                                     <div className="mt-0.5 truncate text-xs text-muted-foreground">#{channel.channel_id}</div>
                                                 </div>
-                                                {channel.global_override ? (
-                                                    <Badge variant="outline" className="shrink-0 border-primary/30 bg-primary/10 px-1.5 text-[10px] text-primary">全局</Badge>
-                                                ) : null}
                                             </button>
                                         );
                                     })}
@@ -2248,7 +2256,7 @@ function SiteAccountPanel({
 
                             {selectedAdvancedChannel ? (() => {
                                 const channel = selectedAdvancedChannel;
-                                const form = advancedForm[channel.channel_id] ?? { auto_group: channel.auto_group, param_override: channel.param_override ?? '' };
+                                const form = advancedForm[channel.channel_id] ?? { param_override: channel.param_override ?? '' };
                                 return (
                                     <div className="space-y-4 rounded-2xl border border-border/60 bg-muted/10 p-4">
                                         <div className="flex flex-wrap items-start justify-between gap-3">
@@ -2256,33 +2264,15 @@ function SiteAccountPanel({
                                                 <div className="text-sm font-medium text-foreground">{routeTypeLabel(channel.route_type)}</div>
                                                 <div className="mt-1 truncate text-xs text-muted-foreground">#{channel.channel_id} · {channel.channel_name}</div>
                                             </div>
-                                            {channel.global_override ? (
-                                                <Badge variant="outline" className="border-primary/30 bg-primary/10 text-primary">全局模糊匹配生效中</Badge>
-                                            ) : null}
                                         </div>
 
                                         <div className="space-y-4">
-                                            <div className="flex items-center justify-between gap-4">
-                                                <span className="text-sm font-medium">自动分组</span>
-                                                <Select value={String(form.auto_group)} onValueChange={(value) => handleAdvancedAutoGroupChange(channel.channel_id, Number(value) as AutoGroupType)}>
-                                                    <SelectTrigger className="w-48 rounded-xl bg-background">
-                                                        <SelectValue />
-                                                    </SelectTrigger>
-                                                    <SelectContent className="rounded-xl">
-                                                        <SelectItem value={String(AutoGroupType.None)}>不自动分组</SelectItem>
-                                                        <SelectItem value={String(AutoGroupType.Fuzzy)}>模糊匹配</SelectItem>
-                                                        <SelectItem value={String(AutoGroupType.Exact)}>精确匹配</SelectItem>
-                                                        <SelectItem value={String(AutoGroupType.Regex)}>按分组正则</SelectItem>
-                                                    </SelectContent>
-                                                </Select>
-                                            </div>
-
                                             <label className="grid gap-2 text-sm">
-                                                <span className="font-medium">参数覆盖 JSON</span>
+                                                <span className="font-medium">{t('siteChannel.advanced.paramOverride')}</span>
                                                 <textarea
                                                     value={form.param_override}
                                                     onChange={(event) => handleAdvancedParamChange(channel.channel_id, event.target.value)}
-                                                    placeholder='留空表示清除；非空时必须是 JSON 对象，例如：{"temperature":0.7,"max_tokens":4096}'
+                                                    placeholder={t('siteChannel.advanced.paramOverridePlaceholder')}
                                                     className="min-h-40 rounded-xl border border-border bg-background px-3 py-2 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                                                 />
                                             </label>
@@ -2291,15 +2281,15 @@ function SiteAccountPanel({
                                 );
                             })() : (
                                 <div className="flex min-h-48 items-center justify-center rounded-2xl border border-dashed border-border/70 bg-muted/10 text-sm text-muted-foreground">
-                                    当前分组暂无投影渠道
+                                    {t('siteChannel.advanced.empty')}
                                 </div>
                             )}
                         </div>
                     </div>
                     <DialogFooter>
-                        <Button type="button" variant="outline" className="rounded-xl" onClick={handleCloseAdvancedSettings} disabled={advancedMutation.isPending}>取消</Button>
+                        <Button type="button" variant="outline" className="rounded-xl" onClick={handleCloseAdvancedSettings} disabled={advancedMutation.isPending}>{t('siteChannel.advanced.cancel')}</Button>
                         <Button type="button" className="rounded-xl" onClick={handleSaveAdvancedSettings} disabled={advancedMutation.isPending || !editingAdvancedGroup}>
-                            {advancedMutation.isPending ? '保存中...' : '保存'}
+                            {advancedMutation.isPending ? t('siteChannel.advanced.saving') : t('siteChannel.advanced.save')}
                         </Button>
                     </DialogFooter>
                 </DialogContent>

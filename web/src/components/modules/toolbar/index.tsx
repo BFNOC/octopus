@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { ArrowUpAZ, Clock3, LayoutGrid, List, Plus, Search, SlidersHorizontal, X } from 'lucide-react';
+import { ArrowUpAZ, Clock3, LayoutGrid, List, Plus, RefreshCw, Search, SlidersHorizontal, WandSparkles, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
     MorphingDialog,
@@ -15,8 +15,11 @@ import { cn } from '@/lib/utils';
 import { useNavStore, type NavItem } from '@/components/modules/navbar';
 import { CreateDialogContent as ChannelCreateContent } from '@/components/modules/channel/Create';
 import { CreateDialogContent as GroupCreateContent } from '@/components/modules/group/Create';
+import { GroupAutoGroupDialogContent } from '@/components/modules/group/AutoGroupDialog';
 import { CreateDialogContent as ModelCreateContent } from '@/components/modules/model/Create';
 import { useSiteUIStore } from '@/components/modules/site/ui-store';
+import { useLogUIStore } from '@/components/modules/log/ui-store';
+import { LogFilterPopover } from '@/components/modules/log/FilterPopover';
 import { useTranslations } from 'next-intl';
 import { useSearchStore } from './search-store';
 import {
@@ -62,6 +65,8 @@ function CreateDialogContent({ activeItem }: { activeItem: ToolbarPage }) {
             return <GroupCreateContent />;
         case 'model':
             return <ModelCreateContent />;
+        case 'log':
+            return null;
     }
 }
 
@@ -93,13 +98,16 @@ export function Toolbar() {
     const requestSyncAll = useSiteUIStore((s) => s.requestSyncAll);
     const requestCheckinAll = useSiteUIStore((s) => s.requestCheckinAll);
     const siteTypeTab = useToolbarViewOptionsStore((s) => s.siteTypeTab ?? 'free');
+    const requestLogRefresh = useLogUIStore((s) => s.requestRefresh);
+    const isLogRefreshing = useLogUIStore((s) => s.isRefreshing);
     const [expandedSearchItem, setExpandedSearchItem] = useState<ToolbarPage | null>(null);
     const searchExpanded = expandedSearchItem === toolbarItem;
 
     if (!toolbarItem) return null;
+    const isLogToolbar = toolbarItem === 'log';
     const showLayoutOptions = toolbarItem === 'channel' || toolbarItem === 'model';
     const showCombinedSortOptions = toolbarItem === 'channel' || toolbarItem === 'group';
-    const showSortOptions = toolbarItem !== 'site';
+    const showSortOptions = toolbarItem !== 'site' && !isLogToolbar;
 
     const siteFilterLabelKeys: Record<SiteFilter, string> = {
         all: '全部站点',
@@ -139,10 +147,12 @@ export function Toolbar() {
                 value,
                 label: t(groupFilterLabelKeys[value]),
             }))
-            : MODEL_FILTER_OPTIONS.map((value) => ({
-                value,
-                label: t(modelFilterLabelKeys[value]),
-            }));
+            : toolbarItem === 'model'
+                ? MODEL_FILTER_OPTIONS.map((value) => ({
+                    value,
+                    label: t(modelFilterLabelKeys[value]),
+                }))
+                : [];
 
     const activeFilter = toolbarItem === 'site'
         ? siteFilter
@@ -150,7 +160,9 @@ export function Toolbar() {
         ? channelFilter
         : toolbarItem === 'group'
             ? groupFilter
-            : modelFilter;
+            : toolbarItem === 'model'
+                ? modelFilter
+                : 'all';
 
     const handleFilterChange = (value: string) => {
         switch (toolbarItem) {
@@ -214,7 +226,7 @@ export function Toolbar() {
                     </motion.div>
                 )}
 
-                <Popover>
+                {!isLogToolbar && <Popover>
                     <PopoverTrigger asChild>
                         <button
                             type="button"
@@ -388,7 +400,41 @@ export function Toolbar() {
                             )}
                         </div>
                     </PopoverContent>
-                </Popover>
+                </Popover>}
+
+                {isLogToolbar && (
+                    <>
+                        <LogFilterPopover />
+
+                        <button
+                            type="button"
+                            aria-label={t('popover.logRefresh.refresh')}
+                            onClick={requestLogRefresh}
+                            disabled={isLogRefreshing}
+                            className={buttonVariants({
+                                variant: 'ghost',
+                                size: 'icon',
+                                className: 'rounded-xl transition-none hover:bg-transparent text-muted-foreground hover:text-foreground disabled:opacity-100',
+                            })}
+                        >
+                            <RefreshCw className={cn('size-4 transition-colors duration-300', isLogRefreshing && 'animate-spin')} />
+                        </button>
+                    </>
+                )}
+
+                {toolbarItem === 'group' && (
+                    <MorphingDialog>
+                        <MorphingDialogTrigger className={buttonVariants({ variant: "ghost", size: "icon", className: "rounded-xl transition-none hover:bg-transparent text-muted-foreground hover:text-foreground" })}>
+                            <WandSparkles className="size-4 transition-colors duration-300" />
+                        </MorphingDialogTrigger>
+
+                        <MorphingDialogContainer>
+                            <MorphingDialogContent className="w-fit max-w-full bg-card text-card-foreground px-6 py-4 rounded-3xl custom-shadow max-h-[calc(100vh-2rem)] flex flex-col overflow-hidden">
+                                <GroupAutoGroupDialogContent />
+                            </MorphingDialogContent>
+                        </MorphingDialogContainer>
+                    </MorphingDialog>
+                )}
 
                 {toolbarItem === 'site' ? (
                     <button
@@ -402,7 +448,7 @@ export function Toolbar() {
                     >
                         <Plus className="size-4 transition-colors duration-300" />
                     </button>
-                ) : (
+                ) : !isLogToolbar ? (
                     <MorphingDialog>
                         <MorphingDialogTrigger className={buttonVariants({ variant: "ghost", size: "icon", className: "rounded-xl transition-none hover:bg-transparent text-muted-foreground hover:text-foreground" })}>
                             <Plus className="size-4 transition-colors duration-300" />
@@ -414,7 +460,7 @@ export function Toolbar() {
                             </MorphingDialogContent>
                         </MorphingDialogContainer>
                     </MorphingDialog>
-                )}
+                ) : null}
             </motion.div>
         </AnimatePresence>
     );

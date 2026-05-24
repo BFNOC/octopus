@@ -24,6 +24,7 @@ import useClickOutside from '@/hooks/useClickOutside';
 const PORTAL_IGNORED_SLOTS = [
   'select-content',
   'popover-content',
+  'hover-card-content',
   'dialog-content',
   'dialog-overlay',
   'alert-dialog-content',
@@ -98,6 +99,7 @@ export type MorphingDialogTriggerProps = {
   className?: string;
   style?: React.CSSProperties;
   triggerRef?: React.RefObject<HTMLDivElement>;
+  onClick?: (event: React.MouseEvent<HTMLDivElement>) => void;
 };
 
 function MorphingDialogTrigger({
@@ -105,12 +107,18 @@ function MorphingDialogTrigger({
   className,
   style,
   triggerRef: triggerRefProp,
+  onClick,
 }: MorphingDialogTriggerProps) {
   const { setIsOpen, isOpen, uniqueId, triggerRef } = useMorphingDialog();
 
-  const handleClick = useCallback(() => {
-    setIsOpen(!isOpen);
-  }, [isOpen, setIsOpen]);
+  const handleClick = useCallback(
+    (event: React.MouseEvent<HTMLDivElement>) => {
+      onClick?.(event);
+      if (event.defaultPrevented) return;
+      setIsOpen(!isOpen);
+    },
+    [isOpen, setIsOpen, onClick]
+  );
 
   const handleKeyDown = useCallback(
     (event: React.KeyboardEvent<HTMLDivElement>) => {

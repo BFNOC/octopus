@@ -84,6 +84,37 @@
                     "priced": "僅收費",
                     "free": "僅免費"
                 }
+            },
+            "logRefresh": {
+                "refresh": "刷新日誌"
+            },
+            "logFilter": {
+                "title": "日誌篩選",
+                "clearAll": "清除篩選",
+                "date": {
+                    "title": "時間範圍",
+                    "startPlaceholder": "開始時間",
+                    "endPlaceholder": "結束時間",
+                    "clear": "清除時間",
+                    "hint": "可選時間會受設定中的日誌保留天數限制。"
+                },
+                "search": {
+                    "title": "搜尋模式",
+                    "mode": {
+                        "prefix": "前綴",
+                        "exact": "精確",
+                        "contains": "包含"
+                    },
+                    "includeContent": "搜尋請求/回應內容",
+                    "slowHint": "包含模式（特別是內容搜尋）較慢，建議配合時間範圍。"
+                },
+                "channel": {
+                    "title": "供應源",
+                    "searchPlaceholder": "搜尋供應源...",
+                    "manualGroup": "一般供應源",
+                    "siteFallback": "站點 #{id}",
+                    "empty": "找不到供應源"
+                }
             }
         }
     },
@@ -229,9 +260,16 @@
                 "title": "匯出",
                 "includeLogs": "包含日誌",
                 "includeStats": "包含統計",
-                "button": "下載 JSON",
+                "format": {
+                    "label": "格式",
+                    "json": "JSON",
+                    "zip": "ZIP",
+                    "logsHint": "包含日誌時強制使用 ZIP（NDJSON 串流寫入），避免記憶體佔用過高。"
+                },
+                "button": "下載",
                 "exporting": "匯出中...",
-                "success": "開始匯出"
+                "success": "開始匯出",
+                "failed": "匯出失敗"
             },
             "import": {
                 "title": "匯入（增量）",
@@ -464,7 +502,61 @@
             "errorDetails": "錯誤詳情",
             "noHttpStatus": "無 HTTP 狀態"
         },
-        "empty": "暫無分組，點擊左上角按鈕建立"
+        "empty": "暫無分組，點擊左上角按鈕建立",
+        "autoGroup": {
+            "title": "自動分組配置",
+            "description": "將供應源或站點分組加入列表後，系統會按模型組名稱或正規自動把模型加入匹配的模型組。",
+            "loadFailed": "載入自動分組配置失敗：{message}",
+            "searchPlaceholder": "搜尋...",
+            "runAll": "立即執行全部已啟用",
+            "loading": "載入中...",
+            "emptyChannels": "暫無供應源",
+            "matchMode": "匹配方式",
+            "notice": "關閉某供應源的自動分組或全域設定後，不會刪除已存在的模型組成員；如需清理，請在具體模型組中手動移除。",
+            "global": {
+                "title": "全域預設模式",
+                "description": "啟用後，所有站點投影供應源會統一使用所選匹配方式；下方單獨供應源設定會保留，並在全域關閉後生效。"
+            },
+            "sections": {
+                "channels": "供應源列表"
+            },
+            "source": {
+                "siteGroup": "站點組",
+                "disabled": "停用",
+                "modelCount": "{count} 個模型",
+                "moreModels": "+{count} 個",
+                "noModels": "暫無模型",
+                "unknownSite": "未知站點",
+                "manualGroup": "普通供應源",
+                "followingGlobalTip": "全域已啟用，此供應源目前依全域模式分組；下方單獨模式將在全域關閉後生效。"
+            },
+            "bulk": {
+                "selected": "已選 {count} 項",
+                "apply": "套用",
+                "clear": "清除",
+                "placeholder": "批次設為..."
+            },
+            "mode": {
+                "none": "關閉",
+                "fuzzy": "模糊比對",
+                "exact": "精確比對",
+                "regex": "正規比對"
+            },
+            "buttons": {
+                "cancel": "取消",
+                "save": "儲存",
+                "saving": "儲存中...",
+                "saveAndRun": "儲存並立即執行",
+                "running": "執行中..."
+            },
+            "toast": {
+                "saved": "自動分組配置已儲存",
+                "savedAndRun": "自動分組配置已儲存並執行",
+                "saveFailed": "儲存自動分組配置失敗",
+                "runSuccess": "已執行自動分組",
+                "runFailed": "執行自動分組失敗"
+            }
+        }
     },
     "model": {
         "create": {
@@ -548,6 +640,23 @@
             "billInput": "計費輸入",
             "cacheRead": "快取讀取",
             "cacheWrite": "快取寫入"
+        },
+        "filters": {
+            "keywordPlaceholder": "搜尋模型、API Key 或內容",
+            "channel": "供應源",
+            "allChannels": "全部供應源",
+            "status": "狀態",
+            "allStatus": "全部狀態",
+            "success": "成功",
+            "error": "錯誤",
+            "reset": "重置",
+            "refresh": "刷新"
+        },
+        "pagination": {
+            "prev": "上一頁",
+            "next": "下一頁",
+            "page": "第 {page} 頁",
+            "pagesRange": "第 {from} ~ {to} 頁"
         }
     },
     "channel": {
@@ -668,6 +777,20 @@
                 "totalCost": "成本",
                 "lastRequestAt": "最近使用"
             }
+        },
+        "advanced": {
+            "title": "站點供應源進階設定",
+            "description": "配置分組 {group} 下各投影供應源的參數覆蓋。自動分組請前往「模型組」頁面右上角統一配置，自訂 Header 請在站點設定中統一配置。",
+            "channelList": "投影供應源",
+            "empty": "目前分組暫無投影供應源",
+            "paramOverride": "參數覆蓋 JSON",
+            "paramOverridePlaceholder": "留空表示清除；非空時必須是 JSON 物件，例如：{\"temperature\":0.7,\"max_tokens\":4096}",
+            "cancel": "取消",
+            "save": "儲存",
+            "saving": "儲存中...",
+            "saved": "進階設定已儲存",
+            "invalidParamOverride": "參數覆蓋必須是合法的 JSON 物件",
+            "saveFailed": "儲存進階設定失敗"
         }
     },
     "siteImport": {

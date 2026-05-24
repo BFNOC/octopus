@@ -1,22 +1,27 @@
 package migrate
 
 import (
-	"github.com/bestruirui/octopus/internal/model"
+	"fmt"
+
 	"gorm.io/gorm"
 )
 
 func init() {
 	RegisterAfterAutoMigration(Migration{
 		Version: 14,
-		Up:      migrateSiteType,
+		Up:      migrateSiteModelHourlyLookupIndex,
 	})
 }
 
-func migrateSiteType(db *gorm.DB) error {
-	if err := db.AutoMigrate(&model.Site{}); err != nil {
-		return err
+func migrateSiteModelHourlyLookupIndex(db *gorm.DB) error {
+	if db == nil {
+		return fmt.Errorf("db is nil")
 	}
-	return db.Model(&model.Site{}).
-		Where("site_type IS NULL OR site_type = ''").
-		Update("site_type", string(model.SiteTypeFree)).Error
+	if !db.Migrator().HasTable("stats_site_model_hourlies") {
+		return nil
+	}
+	if db.Migrator().HasIndex("stats_site_model_hourlies", "idx_stats_site_model_account_hour") {
+		return nil
+	}
+	return db.Exec("CREATE INDEX idx_stats_site_model_account_hour ON stats_site_model_hourlies(site_account_id, hour)").Error
 }
