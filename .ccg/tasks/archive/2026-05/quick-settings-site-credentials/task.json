@@ -1,0 +1,12 @@
+{
+  "id": "quick-settings-site-credentials",
+  "title": "完善快速设置站点凭证、API Key 与自动签到流程",
+  "status": "in_progress",
+  "complexity": "M",
+  "risk": "medium",
+  "domain": "frontend",
+  "currentPhase": "completed",
+  "nextAction": "归档任务",
+  "createdAt": "2026-05-24T01:44:02Z",
+  "branch": "dev"
+}
