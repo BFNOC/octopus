@@ -18,7 +18,8 @@ readonly OUTPUT_DIR="build"
 # Build metadata
 readonly BUILD_TIME="$(TZ='Asia/Shanghai' date +'%F %T %z')"
 readonly GIT_AUTHOR="hureru"
-readonly GIT_VERSION="$(git describe --tags --abbrev=0 2>/dev/null || echo 'dev')"
+readonly SOURCE_VERSION="$(sed -n 's/^[[:space:]]*Version[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' internal/conf/version.go 2>/dev/null | tr -d '\r' | head -1)"
+readonly GIT_VERSION="${OCTOPUS_VERSION:-${SOURCE_VERSION:-$(git describe --tags --abbrev=0 2>/dev/null || echo 'dev')}}"
 readonly COMMIT_ID="$(git rev-parse --short HEAD 2>/dev/null || echo 'unknown')"
 
 # Build flags
@@ -214,7 +215,11 @@ build_frontend() {
 
     # Install dependencies
     log_info "Installing frontend dependencies..."
-    if ! pnpm install; then
+    local pnpm_install_args=()
+    if [ -n "${CI:-}" ]; then
+        pnpm_install_args+=(--frozen-lockfile)
+    fi
+    if ! pnpm install "${pnpm_install_args[@]}"; then
         log_error "Failed to install frontend dependencies"
         cd ..
         return 1
@@ -346,11 +351,6 @@ create_archives() {
     # Cleanup documentation files from archives directory
     rm -f "${archives_dir}/README.md" "${archives_dir}/LICENSE"
 
-    if ! cd .. 2>/dev/null; then
-        log_error "Failed to return to parent directory"
-        return 1
-    fi
-
     log_success "Created archives in ${archives_dir}/"
 }
 
@@ -410,11 +410,9 @@ prepare_docker_binaries() {
         return 1
     fi
 
+    # Only linux/amd64 is needed for this fork's GHCR image.
     local platforms=(
         "x86_64:linux/amd64"
-        "x86:linux/386"
-        "armv7:linux/arm/v7"
-        "arm64:linux/arm64"
     )
 
     local copied_count=0
@@ -459,7 +457,7 @@ show_usage() {
     echo "Usage: $0 <command> [os] [arch]"
     echo ""
     echo "Commands:"
-    echo "  release              Build all platforms and create distribution packages"
+    echo "  release              Build linux/amd64 and create distribution package"
     echo "  build <os> <arch>    Build for specific OS and architecture"
     echo "  help                 Show this help message"
     echo ""
@@ -576,33 +574,12 @@ main() {
             exit 1
         fi
 
-        # Build for different platforms
+        # Build the release platform
         log_step "Building binaries"
 
-        # Standard builds (pure Go, static binaries)
         if ! build_standard linux x86_64; then
             log_error "Failed to build Linux x86_64"
-        fi
-        if ! build_standard linux arm64; then
-            log_error "Failed to build Linux arm64"
-        fi
-        if ! build_standard linux armv7; then
-            log_error "Failed to build Linux armv7"
-        fi
-        if ! build_standard linux x86; then
-            log_error "Failed to build Linux x86"
-        fi
-        if ! build_standard windows x86_64; then
-            log_error "Failed to build Windows x86_64"
-        fi
-        if ! build_standard windows x86; then
-            log_error "Failed to build Windows x86"
-        fi
-        if ! build_standard darwin arm64; then
-            log_error "Failed to build Darwin arm64"
-        fi
-        if ! build_standard darwin x86_64; then
-            log_error "Failed to build Darwin arm64"
+            exit 1
         fi
 
         # Post-processing

@@ -1,9 +1,12 @@
 name: release
 
 on:
+  workflow_dispatch:
   push:
     branches:
-      - master
+      - dev
+    paths:
+      - internal/conf/version.go
 
 permissions:
   contents: write
@@ -18,7 +21,6 @@ jobs:
         uses: actions/checkout@v5
         with:
           fetch-depth: 0
-          ref: master
 
       - name: Setup Go
         uses: actions/setup-go@v6
@@ -42,46 +44,41 @@ jobs:
           cache: 'pnpm'
           cache-dependency-path: web/pnpm-lock.yaml
 
-      - name: Build
-        run: bash scripts/build.sh release
-
-      - name: Get latest tag
-        id: tag
+      - name: Extract version
+        id: version
         run: |
-          LATEST_TAG=$(git describe --tags --abbrev=0)
-          echo "TAG_NAME=$LATEST_TAG" >> $GITHUB_OUTPUT
+          VERSION=$(sed -n 's/^[[:space:]]*Version[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' internal/conf/version.go | tr -d '\r')
+          if [ -z "$VERSION" ]; then
+            echo "Failed to extract version from internal/conf/version.go" >&2
+            exit 1
+          fi
+          if ! echo "$VERSION" | grep -Eq '^v[0-9]+(\.[0-9]+){2}(-[A-Za-z0-9][A-Za-z0-9._-]*)?$'; then
+            echo "Invalid version for release and Docker tags: $VERSION" >&2
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Build
+        env:
+          OCTOPUS_VERSION: ${{ steps.version.outputs.version }}
+        run: bash scripts/build.sh release
 
       - name: Upload Release
         uses: softprops/action-gh-release@v2
         with:
           files: build/archives/*
           prerelease: false
-          tag_name: ${{ steps.tag.outputs.TAG_NAME }}
+          tag_name: ${{ steps.version.outputs.version }}
+          target_commitish: ${{ github.sha }}
 
-      - name: Docker meta (Debian)
-        id: meta-debian
+      - name: Docker meta
+        id: meta
         uses: docker/metadata-action@v5
         with:
-          images: |
-            ghcr.io/${{ github.repository }}
-            ${{ secrets.DOCKERHUB_USERNAME }}/${{ github.event.repository.name }}
+          images: ghcr.io/${{ github.repository }}
           tags: |
             type=raw,value=latest
-            type=raw,value=${{ steps.tag.outputs.TAG_NAME }}
-
-      - name: Docker meta (Alpine)
-        id: meta-alpine
-        uses: docker/metadata-action@v5
-        with:
-          images: |
-            ghcr.io/${{ github.repository }}
-            ${{ secrets.DOCKERHUB_USERNAME }}/${{ github.event.repository.name }}
-          tags: |
-            type=raw,value=latest-alpine
-            type=raw,value=${{ steps.tag.outputs.TAG_NAME }}-alpine
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
+            type=raw,value=${{ steps.version.outputs.version }}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -93,32 +90,12 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Login to Docker Hub
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      - name: Build and push (Alpine)
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: ./scripts/dockerfiles/Dockerfile.alpine
-          push: true
-          platforms: linux/amd64,linux/i386,linux/arm64,linux/arm/v7
-          tags: ${{ steps.meta-alpine.outputs.tags }}
-          labels: ${{ steps.meta-alpine.outputs.labels }}
-          build-args: |
-            TARGETPLATFORM
-
-      - name: Build and push (Debian)
+      - name: Build and push
         uses: docker/build-push-action@v5
         with:
           context: .
           file: ./scripts/dockerfiles/Dockerfile.debian
           push: true
-          platforms: linux/amd64,linux/i386,linux/arm64,linux/arm/v7
-          tags: ${{ steps.meta-debian.outputs.tags }}
-          labels: ${{ steps.meta-debian.outputs.labels }}
-          build-args: |
-            TARGETPLATFORM
+          platforms: linux/amd64
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}

@@ -7,7 +7,9 @@ web/node_modules
 web/.next
 
 # Build output
-build
+build/*
+!build/docker/
+!build/docker/**
 data
 static/out
 web/out
