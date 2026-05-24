@@ -2848,8 +2848,8 @@ function SiteCardImpl({
                     <article
                         className="flex h-full w-full flex-col gap-4 rounded-3xl border border-border/70 bg-card p-4 text-left transition hover:border-primary/20 hover:bg-card/90"
                     >
-                        <header className="flex items-center justify-between gap-3">
-                            <div className="flex min-w-0 flex-1 items-center gap-2">
+                        <header className="space-y-2">
+                            <div className="flex min-w-0 items-center gap-2">
                                 <span
                                     className={cn(
                                         'inline-block size-2 shrink-0 rounded-full',
@@ -2859,47 +2859,49 @@ function SiteCardImpl({
                                     )}
                                     title={tCard(card.enabled ? 'statusEnabled' : 'statusDisabled')}
                                 />
-                                <div className="truncate text-lg font-bold">{card.site_name}</div>
+                                <div className="min-w-0 flex-1 truncate text-lg font-bold" title={card.site_name}>
+                                    {card.site_name}
+                                </div>
                             </div>
-                            <div className="flex shrink-0 items-center gap-1">
-                                <Button
-                                    type="button"
-                                    size="icon-sm"
-                                    variant="ghost"
-                                    className="size-7 rounded-lg"
-                                    title="同步"
-                                    disabled={card.accounts.length === 0 || syncSiteAccount.isPending}
-                                    onClick={(e) => { e.stopPropagation(); handleSyncSite(); }}
-                                >
-                                    <RefreshCw className={cn('size-3.5', syncSiteAccount.isPending && 'animate-spin')} />
-                                </Button>
-                                <Button
-                                    type="button"
-                                    size="icon-sm"
-                                    variant="ghost"
-                                    className="size-7 rounded-lg"
-                                    title="探活"
-                                    onClick={(e) => { e.stopPropagation(); handleProbeSite(); }}
-                                >
-                                    <Activity className="size-3.5" />
-                                </Button>
-                                <Button
-                                    type="button"
-                                    size="icon-sm"
-                                    variant="ghost"
-                                    className="size-7 rounded-lg"
-                                    title="过滤"
-                                    onClick={(e) => { e.stopPropagation(); setFilterOpen(true); }}
-                                >
-                                    <Filter className="size-3.5" />
-                                </Button>
-                            </div>
-                            <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
-                                <Badge variant="outline" className="h-6 px-2 text-[11px]">
+                            <div className="flex min-w-0 flex-wrap items-center gap-2">
+                                <div className="flex shrink-0 items-center gap-1">
+                                    <Button
+                                        type="button"
+                                        size="icon-sm"
+                                        variant="ghost"
+                                        className="size-7 rounded-lg"
+                                        title="同步"
+                                        disabled={card.accounts.length === 0 || syncSiteAccount.isPending}
+                                        onClick={(e) => { e.stopPropagation(); handleSyncSite(); }}
+                                    >
+                                        <RefreshCw className={cn('size-3.5', syncSiteAccount.isPending && 'animate-spin')} />
+                                    </Button>
+                                    <Button
+                                        type="button"
+                                        size="icon-sm"
+                                        variant="ghost"
+                                        className="size-7 rounded-lg"
+                                        title="探活"
+                                        onClick={(e) => { e.stopPropagation(); handleProbeSite(); }}
+                                    >
+                                        <Activity className="size-3.5" />
+                                    </Button>
+                                    <Button
+                                        type="button"
+                                        size="icon-sm"
+                                        variant="ghost"
+                                        className="size-7 rounded-lg"
+                                        title="过滤"
+                                        onClick={(e) => { e.stopPropagation(); setFilterOpen(true); }}
+                                    >
+                                        <Filter className="size-3.5" />
+                                    </Button>
+                                </div>
+                                <Badge variant="outline" className="ml-auto h-6 shrink-0 px-2 text-[11px]">
                                     {platformLabel(card.platform)}
                                 </Badge>
                                 {runtime.maskedPendingKeys > 0 ? (
-                                    <Badge variant="outline" className="h-6 border-amber-500/30 bg-amber-500/10 px-2 text-[11px] text-amber-700 dark:text-amber-300">
+                                    <Badge variant="outline" className="h-6 shrink-0 border-amber-500/30 bg-amber-500/10 px-2 text-[11px] text-amber-700 dark:text-amber-300">
                                         {tCard('maskedPending', { n: runtime.maskedPendingKeys })}
                                     </Badge>
                                 ) : null}

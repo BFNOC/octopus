@@ -1,0 +1,12 @@
+{
+  "id": "improve-site-channel-card-header",
+  "title": "优化渠道卡片头部以完整展示站点名称",
+  "status": "completed",
+  "complexity": "S",
+  "risk": "low",
+  "domain": "frontend",
+  "currentPhase": "completed",
+  "nextAction": "归档任务",
+  "createdAt": "2026-05-24T13:53:47Z",
+  "branch": "dev"
+}
