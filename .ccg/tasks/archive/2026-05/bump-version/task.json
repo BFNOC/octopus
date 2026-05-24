@@ -1,0 +1,12 @@
+{
+  "id": "bump-version",
+  "title": "Bump fork version",
+  "status": "completed",
+  "complexity": "S",
+  "risk": "low",
+  "domain": "release",
+  "currentPhase": "completed",
+  "nextAction": "Archive task",
+  "createdAt": "2026-05-24T16:00:37Z",
+  "branch": "dev"
+}
