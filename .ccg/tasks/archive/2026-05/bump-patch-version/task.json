@@ -1,0 +1,12 @@
+{
+  "id": "bump-patch-version",
+  "title": "小版本号 bump",
+  "status": "completed",
+  "complexity": "S",
+  "risk": "low",
+  "domain": "release",
+  "currentPhase": "completed",
+  "nextAction": "归档任务",
+  "createdAt": "2026-05-24T04:05:42Z",
+  "branch": "dev"
+}
