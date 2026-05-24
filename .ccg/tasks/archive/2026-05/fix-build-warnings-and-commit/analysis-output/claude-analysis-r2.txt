@@ -1,0 +1,12 @@
+## Analysis: pnpm build 三个 Warning
+
+| # | Root Cause | Fix | Validation |
+|---|-----------|-----|-----------|
+| 1 | `browserslist` 依赖 `baseline-browser-mapping`，其 caniuse-lite 数据库过期。传递依赖，**仓库内无法根治**。 | 临时：`pnpm update browserslist` 或 `npx update-browserslist-db@latest`。不可永久修复——每次上游发布新数据后又会过期。 | 运行 build 确认 warning 消失 |
+| 2 | Node v22 废弃 `module.register()`，Next.js 16 内部 SWC loader 仍使用旧 API。**仓库内无法根治**——需等 Next.js 上游适配。 | 无仓库级修复。可降级 Node 到 v20 LTS 消除警告，但不推荐。 | 跟踪 Next.js GitHub issue，升级后验证 |
+| 3 | `output: "export"` 静态生成时在 Node 沙箱执行页面代码，该沙箱无 `localStorage`。项目多处直接调用 `localStorage`（`home/store.ts`、`channel.ts`、`tester.ts`、`ProbeModal.tsx`）。**仓库内可根治。** | 封装一个 `safeStorage` 工具函数，内部做 `typeof window !== 'undefined'` guard，替换所有 `localStorage` 直接调用为该 wrapper。或用 `next-themes` / zustand `persist` middleware 的 SSR-safe 模式。 | `pnpm build` 无 ExperimentalWarning；浏览器中功能正常 |
+
+**Summary**: Warning 1 和 2 是上游依赖问题，仓库内不能根治，只能临时缓解或等待。Warning 3 是项目代码问题，最小修复是加一个 SSR-safe 的 storage wrapper（约 15 行代码 + 5 处替换）。
+
+---
+SESSION_ID: de6566ef-4419-4849-80b5-664f212f8f33
