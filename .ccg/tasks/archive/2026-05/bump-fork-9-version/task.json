@@ -1,0 +1,12 @@
+{
+  "id": "bump-fork-9-version",
+  "title": "升级版本到 fork.9",
+  "status": "completed",
+  "complexity": "S",
+  "risk": "low",
+  "domain": "release",
+  "currentPhase": "completed",
+  "nextAction": "归档任务",
+  "createdAt": "2026-05-24T04:11:18Z",
+  "branch": "dev"
+}
