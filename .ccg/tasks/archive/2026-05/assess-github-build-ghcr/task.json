@@ -1,0 +1,12 @@
+{
+  "id": "assess-github-build-ghcr",
+  "title": "Assess GitHub Actions GHCR build option",
+  "status": "completed",
+  "complexity": "S",
+  "risk": "low",
+  "domain": "devops",
+  "currentPhase": "completed",
+  "nextAction": "Archive task",
+  "createdAt": "2026-05-24T16:12:36Z",
+  "branch": "dev"
+}
