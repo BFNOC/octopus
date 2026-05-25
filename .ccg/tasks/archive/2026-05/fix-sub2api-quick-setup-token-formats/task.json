@@ -1,0 +1,12 @@
+{
+  "id": "fix-sub2api-quick-setup-token-formats",
+  "title": "调整 sub2api 快速设置凭据形式",
+  "status": "completed",
+  "complexity": "M",
+  "risk": "medium",
+  "domain": "frontend",
+  "currentPhase": "completed",
+  "nextAction": "已完成并准备归档",
+  "createdAt": "2026-05-25T03:26:06Z",
+  "branch": "dev"
+}
