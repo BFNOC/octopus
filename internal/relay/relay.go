@@ -1131,6 +1131,20 @@ func (ra *relayAttempt) handleStreamResponse(ctx context.Context, response *http
 	for {
 		select {
 		case <-ctx.Done():
+			// 上游 EOF 与客户端断连可能同时发生，select 在多就绪 case 中随机选择，
+			// 此时优先消费 results 中已就绪的终止信号，避免把正常结束的流误判为断连。
+			select {
+			case r, ok := <-results:
+				if !ok || (r.err != nil && r.err == io.EOF) {
+					log.Debugf("stream end")
+					return nil
+				}
+				if r.err != nil {
+					log.Warnf("failed to read event: %v", r.err)
+					return fmt.Errorf("failed to read stream event: %w", r.err)
+				}
+			default:
+			}
 			err := contextError(ctx)
 			if isLocalRelayBudgetExceeded(ctx, err) {
 				return err
@@ -1426,6 +1440,12 @@ func (ra *relayAttempt) handleStreamResponsePassthroughOpenAIResponses(ctx conte
 	})
 	var rawStream bytes.Buffer
 
+	finishStream := func(c context.Context) error {
+		ra.collectOpenAIResponsesPassthroughMetrics(c, rawStream.Bytes())
+		log.Debugf("stream end")
+		return nil
+	}
+
 	var firstTokenTimer *time.Timer
 	var firstTokenC <-chan time.Time
 	if firstToken && ra.firstTokenTimeOutSec > 0 {
@@ -1441,6 +1461,19 @@ func (ra *relayAttempt) handleStreamResponsePassthroughOpenAIResponses(ctx conte
 	for {
 		select {
 		case <-ctx.Done():
+			// 上游 EOF 与客户端断连可能同时发生，select 在多就绪 case 中随机选择，
+			// 此时优先消费 results 中已就绪的终止信号，避免把正常结束的流误判为断连。
+			select {
+			case r, ok := <-results:
+				if !ok || (r.err != nil && r.err == io.EOF) {
+					return finishStream(context.Background())
+				}
+				if r.err != nil {
+					log.Warnf("failed to read event: %v", r.err)
+					return fmt.Errorf("failed to read stream event: %w", r.err)
+				}
+			default:
+			}
 			err := contextError(ctx)
 			if isLocalRelayBudgetExceeded(ctx, err) {
 				return err
@@ -1460,15 +1493,11 @@ func (ra *relayAttempt) handleStreamResponsePassthroughOpenAIResponses(ctx conte
 			}
 		case r, ok := <-results:
 			if !ok {
-				ra.collectOpenAIResponsesPassthroughMetrics(ctx, rawStream.Bytes())
-				log.Debugf("stream end")
-				return nil
+				return finishStream(ctx)
 			}
 			if r.err != nil {
 				if r.err == io.EOF {
-					ra.collectOpenAIResponsesPassthroughMetrics(ctx, rawStream.Bytes())
-					log.Debugf("stream end")
-					return nil
+					return finishStream(ctx)
 				}
 				log.Warnf("failed to read event: %v", r.err)
 				return fmt.Errorf("failed to read stream event: %w", r.err)
@@ -1711,6 +1740,13 @@ func (ra *relayAttempt) handleStreamResponsePassthroughAnthropic(ctx context.Con
 	})
 	var rawStream bytes.Buffer
 
+	finishStream := func(c context.Context) error {
+		ra.collectAnthropicPassthroughMetrics(c, rawStream.Bytes())
+		ra.collectResponse()
+		log.Debugf("stream end")
+		return nil
+	}
+
 	var firstTokenTimer *time.Timer
 	var firstTokenC <-chan time.Time
 	if firstToken && ra.firstTokenTimeOutSec > 0 {
@@ -1726,6 +1762,19 @@ func (ra *relayAttempt) handleStreamResponsePassthroughAnthropic(ctx context.Con
 	for {
 		select {
 		case <-ctx.Done():
+			// 上游 EOF 与客户端断连可能同时发生，select 在多就绪 case 中随机选择，
+			// 此时优先消费 results 中已就绪的终止信号，避免把正常结束的流误判为断连。
+			select {
+			case r, ok := <-results:
+				if !ok || (r.err != nil && r.err == io.EOF) {
+					return finishStream(context.Background())
+				}
+				if r.err != nil {
+					log.Warnf("failed to read event: %v", r.err)
+					return fmt.Errorf("failed to read stream event: %w", r.err)
+				}
+			default:
+			}
 			err := contextError(ctx)
 			if isLocalRelayBudgetExceeded(ctx, err) {
 				return err
@@ -1746,17 +1795,11 @@ func (ra *relayAttempt) handleStreamResponsePassthroughAnthropic(ctx context.Con
 			}
 		case r, ok := <-results:
 			if !ok {
-				ra.collectAnthropicPassthroughMetrics(ctx, rawStream.Bytes())
-				ra.collectResponse()
-				log.Debugf("stream end")
-				return nil
+				return finishStream(ctx)
 			}
 			if r.err != nil {
 				if r.err == io.EOF {
-					ra.collectAnthropicPassthroughMetrics(ctx, rawStream.Bytes())
-					ra.collectResponse()
-					log.Debugf("stream end")
-					return nil
+					return finishStream(ctx)
 				}
 				log.Warnf("failed to read event: %v", r.err)
 				return fmt.Errorf("failed to read stream event: %w", r.err)

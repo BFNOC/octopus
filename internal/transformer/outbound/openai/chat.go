@@ -164,7 +164,7 @@ func buildChatCompletionsRequest(request *model.InternalLLMRequest) *ChatComplet
 	}
 
 	result := &ChatCompletionsRequest{
-		Messages:            request.Messages,
+		Messages:            chatCompletionsMessages(request.Messages),
 		Model:               request.Model,
 		FrequencyPenalty:    request.FrequencyPenalty,
 		Logprobs:            request.Logprobs,
@@ -219,6 +219,21 @@ func buildChatCompletionsRequest(request *model.InternalLLMRequest) *ChatComplet
 		}
 	}
 
+	return result
+}
+
+func chatCompletionsMessages(messages []model.Message) []model.Message {
+	if len(messages) == 0 {
+		return messages
+	}
+	result := make([]model.Message, len(messages))
+	copy(result, messages)
+	for i := range result {
+		if result[i].Content.Content == nil && len(result[i].Content.MultipleContent) == 0 {
+			empty := ""
+			result[i].Content.Content = &empty
+		}
+	}
 	return result
 }
 

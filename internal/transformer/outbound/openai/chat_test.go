@@ -200,6 +200,64 @@ func TestTransformRequestPreservesDeveloperRole(t *testing.T) {
 	}
 }
 
+func TestTransformRequestDoesNotEmitNullContentForToolHistory(t *testing.T) {
+	outbound := &ChatOutbound{}
+	req := &model.InternalLLMRequest{
+		Model: "gpt-4o",
+		Messages: []model.Message{
+			{
+				Role:    "user",
+				Content: model.MessageContent{Content: stringPtr("use the tool")},
+			},
+			{
+				Role: "assistant",
+				ToolCalls: []model.ToolCall{{
+					ID:   "call_123",
+					Type: "function",
+					Function: model.FunctionCall{
+						Name:      "lookup",
+						Arguments: `{"q":"octopus"}`,
+					},
+				}},
+			},
+			{
+				Role:       "tool",
+				ToolCallID: stringPtr("call_123"),
+			},
+		},
+	}
+
+	httpReq, err := outbound.TransformRequest(context.Background(), req, "https://api.openai.com", "sk-test")
+	if err != nil {
+		t.Fatalf("TransformRequest: %v", err)
+	}
+	body, err := io.ReadAll(httpReq.Body)
+	if err != nil {
+		t.Fatalf("read body: %v", err)
+	}
+
+	var payload struct {
+		Messages []map[string]any `json:"messages"`
+	}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(payload.Messages) != 3 {
+		t.Fatalf("expected 3 messages, got %+v", payload.Messages)
+	}
+	for i, msg := range payload.Messages {
+		if content, ok := msg["content"]; !ok || content == nil {
+			t.Fatalf("message %d emitted null/missing content: body=%s", i, body)
+		}
+	}
+	if got := payload.Messages[1]["content"]; got != "" {
+		t.Fatalf("expected assistant tool-call content to be empty string, got %#v", got)
+	}
+	if got := payload.Messages[2]["content"]; got != "" {
+		t.Fatalf("expected tool-result content to be empty string, got %#v", got)
+	}
+}
+
 // Chat outbound forwards OpenAI-Organization / OpenAI-Project when they
 // are present in TransformerMetadata, and skips them cleanly when absent
 // or blank.

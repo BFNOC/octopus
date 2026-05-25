@@ -1,7 +1,0 @@
-{"path":"web/src/components/modules/wizard/Step1AddSite.tsx","reason":"快速设置 Step 1 的站点和账号创建表单"}
-{"path":"web/src/api/endpoints/site.ts","reason":"SiteAccount payload 已包含 refresh_token 与 token_expires_at"}
-{"path":"/Users/chaos/developments/github_go/metapi/src/web/pages/Accounts.tsx","reason":"参考 Sub2API refresh_token 和 token_expires_at 的表单与提交语义"}
-{"path":"web/src/components/modules/site/index.tsx","reason":"本仓库站点管理页已有凭据默认值、可选项和表单规则"}
-{"path":"internal/sitesync/sync.go","reason":"确认管理平台 UsernamePassword 会登录并解析 access token"}
-{"path":"internal/sitesync/anyrouter.go","reason":"确认 AnyRouter UsernamePassword 由专用登录解析处理"}
-{"path":"web/src/lib/site-token.ts","reason":"共享 token_expires_at 输入解析，供站点管理页和快速设置复用"}
