@@ -14,8 +14,20 @@ import {
     SelectTrigger,
     SelectValue,
 } from '@/components/ui/select';
+import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { useCreateSite, useCreateSiteAccount, useDetectSitePlatform, useSiteList, SitePlatform, SiteCredentialType } from '@/api/endpoints/site';
+import { useCreateSite, useCreateSiteAccount, useDetectSitePlatform, useSiteList, SitePlatform, SiteCredentialType, type Site } from '@/api/endpoints/site';
+import { parseTokenExpiresAtInput } from '@/lib/site-token';
+import { useJumpStore } from '@/stores/jump';
 import { useWizardStore } from './store';
 
 const PLATFORM_OPTIONS = [
@@ -37,6 +49,7 @@ const CREDENTIAL_LABELS: Record<SiteCredentialType, string> = {
 };
 
 const CREDENTIAL_DESCRIPTIONS: Partial<Record<SiteCredentialType, string>> = {
+    [SiteCredentialType.UsernamePassword]: '登录站点后自动获取 Session Token',
     [SiteCredentialType.AccessToken]: '用于管理站点、同步分组与创建网站 Key',
     [SiteCredentialType.APIKey]: '直接用网站 API Key 同步模型与代理转发',
 };
@@ -48,23 +61,30 @@ const CHECKIN_CAPABLE_PLATFORMS = new Set<SitePlatform>([
     SitePlatform.AnyRouter,
 ]);
 
-const API_KEY_ONLY_PLATFORMS = new Set<SitePlatform>([
+const OFFICIAL_API_PLATFORMS = new Set<SitePlatform>([
     SitePlatform.OpenAI,
     SitePlatform.Claude,
     SitePlatform.Gemini,
 ]);
 
 function defaultCredentialType(platform: SitePlatform): SiteCredentialType {
-    return API_KEY_ONLY_PLATFORMS.has(platform)
-        ? SiteCredentialType.APIKey
-        : SiteCredentialType.AccessToken;
+    if (platform === SitePlatform.Sub2API) {
+        return SiteCredentialType.AccessToken;
+    }
+    if (OFFICIAL_API_PLATFORMS.has(platform)) {
+        return SiteCredentialType.APIKey;
+    }
+    return SiteCredentialType.UsernamePassword;
 }
 
 function credentialOptionsForPlatform(platform: SitePlatform | ''): SiteCredentialType[] {
-    if (platform && API_KEY_ONLY_PLATFORMS.has(platform)) {
-        return [SiteCredentialType.APIKey];
+    if (platform && OFFICIAL_API_PLATFORMS.has(platform)) {
+        return [SiteCredentialType.APIKey, SiteCredentialType.AccessToken];
     }
-    return [SiteCredentialType.AccessToken, SiteCredentialType.APIKey];
+    if (platform === SitePlatform.Sub2API) {
+        return [SiteCredentialType.AccessToken, SiteCredentialType.APIKey];
+    }
+    return [SiteCredentialType.UsernamePassword, SiteCredentialType.AccessToken, SiteCredentialType.APIKey];
 }
 
 function credentialPlaceholder(type: SiteCredentialType) {
@@ -79,7 +99,7 @@ function credentialPlaceholder(type: SiteCredentialType) {
 
 function canUseAutoCheckin(siteType: 'free' | 'paid', platform: SitePlatform | '', credentialType: SiteCredentialType) {
     if (siteType !== 'free') return false;
-    if (credentialType !== SiteCredentialType.AccessToken) return false;
+    if (credentialType === SiteCredentialType.APIKey) return false;
     if (!platform) return true;
     return CHECKIN_CAPABLE_PLATFORMS.has(platform);
 }
@@ -91,23 +111,60 @@ function autoCheckinHint(siteType: 'free' | 'paid', platform: SitePlatform | '',
     return '开启后会按站点自动化任务定期签到';
 }
 
+type DuplicateSitePrompt = {
+    site: Site;
+    normalizedUrl: string;
+};
+
+function normalizeComparableSiteUrl(value: string) {
+    let trimmed = value.trim();
+    if (!trimmed) return '';
+
+    if (trimmed.startsWith('//')) {
+        trimmed = `https:${trimmed}`;
+    } else if (!/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(trimmed)) {
+        trimmed = `https://${trimmed}`;
+    }
+
+    try {
+        const parsed = new URL(trimmed);
+        const path = parsed.pathname.replace(/\/+$/, '');
+        return `${parsed.protocol.toLowerCase()}//${parsed.hostname.toLowerCase()}${parsed.port ? `:${parsed.port}` : ''}${path === '/' ? '' : path}${parsed.search}`;
+    } catch {
+        return trimmed.replace(/\/+$/, '').toLowerCase();
+    }
+}
+
+function getErrorMessage(err: unknown, fallback: string) {
+    return err && typeof err === 'object' && 'message' in err && typeof err.message === 'string'
+        ? err.message
+        : fallback;
+}
+
 export function Step1AddSite() {
     const { setStep, setSiteId, setAccountId, setCredentialType: setWizardCredentialType } = useWizardStore();
     const createSite = useCreateSite();
     const createAccount = useCreateSiteAccount();
     const detectPlatform = useDetectSitePlatform();
-    const { data: existingSites, isLoading: isSitesLoading } = useSiteList();
+    const requestJump = useJumpStore((state) => state.requestJump);
+    const { data: existingSites, isLoading: isSitesLoading, refetch: refetchSites } = useSiteList();
 
     const [name, setName] = useState('');
     const [baseUrl, setBaseUrl] = useState('');
     const [platform, setPlatform] = useState<string>('');
     const [siteType, setSiteType] = useState<'free' | 'paid'>('free');
+    const [username, setUsername] = useState('');
+    const [password, setPassword] = useState('');
     const [token, setToken] = useState('');
+    const [refreshToken, setRefreshToken] = useState('');
+    const [tokenExpiresAt, setTokenExpiresAt] = useState('');
     const [platformUserId, setPlatformUserId] = useState('');
-    const [credentialType, setCredentialType] = useState<SiteCredentialType>(SiteCredentialType.AccessToken);
+    const [credentialType, setCredentialType] = useState<SiteCredentialType>(SiteCredentialType.UsernamePassword);
     const [autoCheckin, setAutoCheckin] = useState(true);
     const [detectingUrl, setDetectingUrl] = useState(false);
     const [submitting, setSubmitting] = useState(false);
+    const [duplicateSiteDialogOpen, setDuplicateSiteDialogOpen] = useState(false);
+    const [duplicateSitePrompt, setDuplicateSitePrompt] = useState<DuplicateSitePrompt | null>(null);
     const currentBaseUrlRef = useRef('');
     const lastDetectedUrlRef = useRef('');
     const pendingDetectionRef = useRef<Promise<SitePlatform | ''> | null>(null);
@@ -124,15 +181,58 @@ export function Step1AddSite() {
     );
     const autoCheckinEnabled = canUseAutoCheckin(siteType, selectedPlatform, credentialType);
     const effectiveAutoCheckin = autoCheckinEnabled && autoCheckin;
+    const showSub2APITokenFields = selectedPlatform === SitePlatform.Sub2API
+        && credentialType === SiteCredentialType.AccessToken;
+    const showUsernamePasswordFields = credentialType === SiteCredentialType.UsernamePassword;
 
     const applyPlatform = useCallback((nextPlatform: SitePlatform) => {
         selectedPlatformRef.current = nextPlatform;
         setPlatform(nextPlatform);
+        const nextOptions = credentialOptionsForPlatform(nextPlatform);
+        if (!nextOptions.includes(SiteCredentialType.UsernamePassword)) {
+            setUsername('');
+            setPassword('');
+        }
+        if (nextPlatform !== SitePlatform.Sub2API) {
+            setRefreshToken('');
+            setTokenExpiresAt('');
+        }
         setCredentialType((current) => {
-            const nextOptions = credentialOptionsForPlatform(nextPlatform);
             return nextOptions.includes(current) ? current : defaultCredentialType(nextPlatform);
         });
     }, []);
+
+    const findDuplicateSite = useCallback(async (rawUrl: string, forceRefresh: boolean) => {
+        const normalizedUrl = normalizeComparableSiteUrl(rawUrl);
+        if (!normalizedUrl) return null;
+
+        let sites = existingSites ?? [];
+        if (forceRefresh) {
+            const result = await refetchSites();
+            if (result.error && !result.data) {
+                throw result.error;
+            }
+            sites = result.data ?? sites;
+        }
+
+        return sites.find((site) => (
+            !site.archived && normalizeComparableSiteUrl(site.base_url) === normalizedUrl
+        )) ?? null;
+    }, [existingSites, refetchSites]);
+
+    const showDuplicateSitePrompt = useCallback((site: Site, rawUrl: string) => {
+        setDuplicateSitePrompt({
+            site,
+            normalizedUrl: normalizeComparableSiteUrl(rawUrl),
+        });
+        setDuplicateSiteDialogOpen(true);
+    }, []);
+
+    const handleJumpToDuplicateSite = useCallback(() => {
+        if (!duplicateSitePrompt) return;
+        setDuplicateSiteDialogOpen(false);
+        requestJump({ kind: 'site-channel-card', siteId: duplicateSitePrompt.site.id });
+    }, [duplicateSitePrompt, requestJump]);
 
     const handleDetectBaseUrl = useCallback(async (showFeedback: boolean): Promise<SitePlatform | ''> => {
         const trimmedUrl = baseUrl.trim();
@@ -158,6 +258,20 @@ export function Step1AddSite() {
         const detection = (async () => {
             setDetectingUrl(true);
             try {
+                try {
+                    const duplicateSite = await findDuplicateSite(trimmedUrl, pendingDetectionFeedbackRef.current);
+                    if (duplicateSite) {
+                        if (detectionRunIdRef.current === detectionRunId && pendingDetectionFeedbackRef.current) {
+                            showDuplicateSitePrompt(duplicateSite, trimmedUrl);
+                        }
+                        return '';
+                    }
+                } catch (err: unknown) {
+                    if (detectionRunIdRef.current === detectionRunId && pendingDetectionFeedbackRef.current) {
+                        toast.error('检查已有站点失败', { description: getErrorMessage(err, '请稍后重试') });
+                    }
+                }
+
                 const detected = await detectPlatform.mutateAsync(trimmedUrl);
                 const nextPlatform = detected.platform as SitePlatform;
                 if (!nextPlatform) {
@@ -182,10 +296,7 @@ export function Step1AddSite() {
                 return nextPlatform;
             } catch (err: unknown) {
                 if (detectionRunIdRef.current === detectionRunId && pendingDetectionFeedbackRef.current) {
-                    const message = (err && typeof err === 'object' && 'message' in err && typeof err.message === 'string')
-                        ? err.message
-                        : '自动检测失败';
-                    toast.error(message);
+                    toast.error(getErrorMessage(err, '自动检测失败'));
                 }
                 return '';
             } finally {
@@ -201,12 +312,20 @@ export function Step1AddSite() {
         pendingDetectionRef.current = detection;
         pendingDetectionUrlRef.current = trimmedUrl;
         return detection;
-    }, [applyPlatform, baseUrl, detectPlatform]);
+    }, [applyPlatform, baseUrl, detectPlatform, findDuplicateSite, showDuplicateSitePrompt]);
 
     const handlePlatformChange = useCallback((value: string) => {
         platformSelectionVersionRef.current += 1;
         applyPlatform(value as SitePlatform);
     }, [applyPlatform]);
+
+    const handleCredentialTypeChange = useCallback((type: SiteCredentialType) => {
+        setCredentialType(type);
+        if (type !== SiteCredentialType.UsernamePassword) {
+            setUsername('');
+            setPassword('');
+        }
+    }, []);
 
     const handleSiteTypeChange = useCallback((value: string) => {
         const nextType = value as 'free' | 'paid';
@@ -217,6 +336,10 @@ export function Step1AddSite() {
     async function handleSubmit(e: FormEvent) {
         e.preventDefault();
 
+        if (submitting || isSitesLoading || detectingUrl) {
+            return;
+        }
+
         if (!name.trim()) {
             toast.error('请输入站点名称');
             return;
@@ -225,11 +348,6 @@ export function Step1AddSite() {
             toast.error('请输入站点 URL');
             return;
         }
-        if (!token.trim()) {
-            toast.error('请输入账号令牌');
-            return;
-        }
-
         if (platformUserId.trim()) {
             const parsed = Number(platformUserId.trim());
             if (!Number.isInteger(parsed) || parsed <= 0) {
@@ -246,6 +364,12 @@ export function Step1AddSite() {
 
         setSubmitting(true);
         try {
+            const duplicateSite = await findDuplicateSite(baseUrl.trim(), true);
+            if (duplicateSite) {
+                showDuplicateSitePrompt(duplicateSite, baseUrl);
+                return;
+            }
+
             let resolvedPlatform = platform as SitePlatform | '';
 
             if (!resolvedPlatform) {
@@ -258,6 +382,27 @@ export function Step1AddSite() {
             const resolvedCredentialType = allowedCredentials.includes(credentialType)
                 ? credentialType
                 : defaultCredentialType(resolvedPlatform);
+            if (resolvedCredentialType === SiteCredentialType.UsernamePassword) {
+                if (!username.trim() || !password.trim()) {
+                    toast.error('请输入用户名和密码');
+                    return;
+                }
+            } else if (!token.trim()) {
+                toast.error(resolvedCredentialType === SiteCredentialType.APIKey ? '请输入 API Key' : '请输入 Access Token');
+                return;
+            }
+
+            const isSub2APISession = resolvedPlatform === SitePlatform.Sub2API
+                && resolvedCredentialType === SiteCredentialType.AccessToken;
+            let resolvedTokenExpiresAt = 0;
+            if (isSub2APISession && tokenExpiresAt.trim()) {
+                try {
+                    resolvedTokenExpiresAt = parseTokenExpiresAtInput(tokenExpiresAt);
+                } catch (err: unknown) {
+                    toast.error(getErrorMessage(err, 'token_expires_at 必须是时间戳或可解析时间'));
+                    return;
+                }
+            }
 
             const site = await createSite.mutateAsync({
                 name: name.trim(),
@@ -280,12 +425,12 @@ export function Step1AddSite() {
                 site_id: site.id,
                 name: '默认账号',
                 credential_type: resolvedCredentialType,
-                username: '',
-                password: '',
+                username: resolvedCredentialType === SiteCredentialType.UsernamePassword ? username.trim() : '',
+                password: resolvedCredentialType === SiteCredentialType.UsernamePassword ? password.trim() : '',
                 access_token: resolvedCredentialType === SiteCredentialType.AccessToken ? token.trim() : '',
                 api_key: resolvedCredentialType === SiteCredentialType.APIKey ? token.trim() : '',
-                refresh_token: '',
-                token_expires_at: 0,
+                refresh_token: isSub2APISession ? refreshToken.trim() : '',
+                token_expires_at: resolvedTokenExpiresAt,
                 platform_user_id: platformUserId.trim() ? Number(platformUserId.trim()) : null,
                 proxy_mode: 'inherit',
                 proxy_config_id: null,
@@ -304,16 +449,14 @@ export function Step1AddSite() {
             toast.success('站点和账号已创建');
             setStep(2);
         } catch (err: unknown) {
-            const message = (err && typeof err === 'object' && 'message' in err && typeof err.message === 'string')
-                ? err.message
-                : '创建失败';
-            toast.error(message);
+            toast.error(getErrorMessage(err, '创建失败'));
         } finally {
             setSubmitting(false);
         }
     }
 
     return (
+        <>
         <Card>
             <CardHeader>
                 <CardTitle>添加站点</CardTitle>
@@ -358,7 +501,7 @@ export function Step1AddSite() {
                                     type="button"
                                     variant="outline"
                                     className="shrink-0 rounded-xl"
-                                    disabled={detectingUrl || !baseUrl.trim()}
+                                    disabled={detectingUrl || isSitesLoading || !baseUrl.trim()}
                                     onClick={() => void handleDetectBaseUrl(true)}
                                 >
                                     {detectingUrl ? <Loader2 className="size-4 animate-spin" /> : null}
@@ -384,28 +527,40 @@ export function Step1AddSite() {
                                 </SelectContent>
                             </Select>
                         </Label>
-                        <Label className="grid gap-2">
-                            <span>{CREDENTIAL_LABELS[credentialType]}</span>
-                            <Input
-                                type="password"
-                                value={token}
-                                onChange={(e) => setToken(e.target.value)}
-                                placeholder={credentialPlaceholder(credentialType)}
-                                className="rounded-xl"
-                            />
-                        </Label>
+                        {showUsernamePasswordFields ? (
+                            <Label className="grid gap-2">
+                                <span>用户名</span>
+                                <Input
+                                    value={username}
+                                    onChange={(e) => setUsername(e.target.value)}
+                                    placeholder="请输入用户名"
+                                    className="rounded-xl"
+                                />
+                            </Label>
+                        ) : (
+                            <Label className="grid gap-2">
+                                <span>{CREDENTIAL_LABELS[credentialType]}</span>
+                                <Input
+                                    type="password"
+                                    value={token}
+                                    onChange={(e) => setToken(e.target.value)}
+                                    placeholder={credentialPlaceholder(credentialType)}
+                                    className="rounded-xl"
+                                />
+                            </Label>
+                        )}
                     </div>
 
                     <div className="grid gap-2 rounded-xl border border-border/70 bg-muted/20 p-3">
                         <div className="text-sm font-medium">凭证类型</div>
-                        <div className="grid gap-2 sm:grid-cols-2">
+                        <div className="grid gap-2 sm:grid-cols-2 md:grid-cols-3">
                             {credentialOptions.map((type) => (
                                 <Button
                                     key={type}
                                     type="button"
                                     variant={credentialType === type ? 'default' : 'outline'}
                                     className="h-auto justify-start rounded-xl px-3 py-2 text-left"
-                                    onClick={() => setCredentialType(type)}
+                                    onClick={() => handleCredentialTypeChange(type)}
                                 >
                                     <span className="grid gap-0.5">
                                         <span>{CREDENTIAL_LABELS[type]}</span>
@@ -417,6 +572,51 @@ export function Step1AddSite() {
                             ))}
                         </div>
                     </div>
+
+                    {showUsernamePasswordFields ? (
+                        <Label className="grid gap-2">
+                            <span>密码</span>
+                            <Input
+                                type="password"
+                                value={password}
+                                onChange={(e) => setPassword(e.target.value)}
+                                placeholder="请输入密码"
+                                className="rounded-xl"
+                            />
+                        </Label>
+                    ) : null}
+
+                    {showSub2APITokenFields ? (
+                        <div className="grid gap-3 rounded-xl border border-border/70 bg-muted/20 p-3">
+                            <div className="grid gap-1">
+                                <div className="text-sm font-medium">Sub2API 托管续期</div>
+                                <p className="text-xs text-muted-foreground">
+                                    推荐同时填写 F12 中的 refresh_token 与 token_expires_at，JWT 快过期或 401 时可自动续期。
+                                </p>
+                            </div>
+                            <div className="grid gap-4 md:grid-cols-2">
+                                <Label className="grid gap-2">
+                                    <span>Refresh Token <span className="text-muted-foreground">(可选)</span></span>
+                                    <Input
+                                        type="password"
+                                        value={refreshToken}
+                                        onChange={(e) => setRefreshToken(e.target.value)}
+                                        placeholder="Sub2API refresh_token"
+                                        className="rounded-xl bg-background"
+                                    />
+                                </Label>
+                                <Label className="grid gap-2">
+                                    <span>token_expires_at <span className="text-muted-foreground">(可选)</span></span>
+                                    <Input
+                                        value={tokenExpiresAt}
+                                        onChange={(e) => setTokenExpiresAt(e.target.value)}
+                                        placeholder="毫秒时间戳，秒级会自动转换"
+                                        className="rounded-xl bg-background"
+                                    />
+                                </Label>
+                            </div>
+                        </div>
+                    ) : null}
 
                     <Label className="grid gap-2">
                         <span>站点类型</span>
@@ -458,12 +658,30 @@ export function Step1AddSite() {
                     </Label>
 
                     <div className="flex justify-end pt-2">
-                        <Button type="submit" className="rounded-xl" disabled={submitting || isSitesLoading}>
+                        <Button type="submit" className="rounded-xl" disabled={submitting || isSitesLoading || detectingUrl}>
                             {submitting ? '创建中...' : '创建站点并继续'}
                         </Button>
                     </div>
                 </form>
             </CardContent>
         </Card>
+        <AlertDialog open={duplicateSiteDialogOpen} onOpenChange={setDuplicateSiteDialogOpen}>
+            <AlertDialogContent>
+                <AlertDialogHeader>
+                    <AlertDialogTitle>站点 URL 已存在</AlertDialogTitle>
+                    <AlertDialogDescription>
+                        站点「{duplicateSitePrompt?.site.name}」已经使用相同 URL（{duplicateSitePrompt?.normalizedUrl}），不会重复添加。
+                        是否跳转到该站点的渠道页面？
+                    </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                    <AlertDialogCancel>继续编辑</AlertDialogCancel>
+                    <AlertDialogAction onClick={handleJumpToDuplicateSite}>
+                        跳转到站点渠道
+                    </AlertDialogAction>
+                </AlertDialogFooter>
+            </AlertDialogContent>
+        </AlertDialog>
+        </>
     );
 }

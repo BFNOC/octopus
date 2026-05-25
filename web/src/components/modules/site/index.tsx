@@ -75,6 +75,7 @@ import {
 } from "@/components/modules/toolbar";
 import type { SiteFilter as SiteSurfaceFilter } from "@/components/modules/toolbar/view-options-store";
 import { cn } from "@/lib/utils";
+import { parseTokenExpiresAtInput } from "@/lib/site-token";
 import { useSettingStore } from "@/stores/setting";
 import { CheckinPanel } from "./CheckinPanel";
 import {
@@ -361,27 +362,6 @@ function createAccountForm(account: SiteAccount): SiteAccountFormState {
     checkin_interval_hours: account.checkin_interval_hours,
     checkin_random_window_minutes: account.checkin_random_window_minutes,
   };
-}
-
-function parseTokenExpiresAtInput(value: string) {
-  const trimmed = value.trim();
-  if (!trimmed) {
-    return 0;
-  }
-
-  if (/^\d+$/.test(trimmed)) {
-    const parsed = Number(trimmed);
-    if (!Number.isFinite(parsed) || parsed <= 0) {
-      throw new Error("token_expires_at 必须是正整数时间戳");
-    }
-    return parsed < 1_000_000_000_000 ? Math.trunc(parsed * 1000) : Math.trunc(parsed);
-  }
-
-  const parsed = Date.parse(trimmed);
-  if (!Number.isFinite(parsed) || parsed <= 0) {
-    throw new Error("token_expires_at 必须是时间戳或可解析时间");
-  }
-  return Math.trunc(parsed);
 }
 
 function formatDateTime(value?: string | null) {
