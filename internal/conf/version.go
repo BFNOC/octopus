@@ -1,7 +1,7 @@
 package conf
 
 var (
-	Version   = "v0.9.20-fork.13"
+	Version   = "v0.9.20-fork.14"
 	Commit    = "unknown"
 	BuildTime = "unknown"
 	Author    = "BFNOC"
