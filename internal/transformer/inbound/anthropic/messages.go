@@ -262,6 +262,10 @@ func (i *MessagesInbound) TransformRequest(ctx context.Context, body []byte) (*m
 							}
 						}
 					}
+					if toolMsg.Content.Content == nil && len(toolMsg.Content.MultipleContent) == 0 {
+						empty := ""
+						toolMsg.Content = model.MessageContent{Content: &empty}
+					}
 
 					messages = append(messages, toolMsg)
 				case "tool_use":
@@ -1164,7 +1168,7 @@ func (i *MessagesInbound) TransformStream(ctx context.Context, stream *model.Int
 		}
 
 		// Handle finish reason
-		if choice.FinishReason != nil && !i.hasFinished {
+		if choice.FinishReason != nil && *choice.FinishReason != "" && !i.hasFinished {
 			i.hasFinished = true
 
 			if i.hasOpenContentBlock() {

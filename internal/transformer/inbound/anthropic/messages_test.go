@@ -361,6 +361,36 @@ func TestTransformStreamDoesNotStopMissingContentBlock(t *testing.T) {
 	}
 }
 
+func TestTransformStreamIgnoresEmptyFinishReason(t *testing.T) {
+	inbound := &MessagesInbound{}
+
+	out, err := inbound.TransformStream(context.Background(), &model.InternalLLMResponse{
+		ID:    "msg_empty_finish",
+		Model: "claude-test",
+		Choices: []model.Choice{
+			{
+				Index:        0,
+				FinishReason: stringPtr(""),
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("TransformStream() error = %v", err)
+	}
+	outText := string(out)
+	if strings.Contains(outText, "message_delta") || strings.Contains(outText, "message_stop") {
+		t.Fatalf("expected empty finish_reason chunk not to finalize stream, got %s", outText)
+	}
+
+	done, err := inbound.TransformStream(context.Background(), &model.InternalLLMResponse{Object: "[DONE]"})
+	if err != nil {
+		t.Fatalf("done TransformStream() error = %v", err)
+	}
+	if len(done) != 0 {
+		t.Fatalf("expected DONE to remain pending without real finish reason, got %s", done)
+	}
+}
+
 func TestTransformStreamEventsDirectAnthropicSSE(t *testing.T) {
 	inbound := &MessagesInbound{}
 	events := []model.StreamEvent{

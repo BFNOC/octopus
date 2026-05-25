@@ -65,6 +65,40 @@ func TestTransformRequestAcceptsToolResultContentAsSingleBlockObject(t *testing.
 	}
 }
 
+func TestTransformRequestToolResultWithoutContentUsesEmptyString(t *testing.T) {
+	inbound := &MessagesInbound{}
+	body := []byte(`{
+		"model":"claude-3-5-sonnet",
+		"max_tokens":16,
+		"messages":[
+			{
+				"role":"user",
+				"content":[
+					{
+						"type":"tool_result",
+						"tool_use_id":"toolu_empty"
+					}
+				]
+			}
+		]
+	}`)
+
+	req, err := inbound.TransformRequest(context.Background(), body)
+	if err != nil {
+		t.Fatalf("TransformRequest() error = %v", err)
+	}
+	if len(req.Messages) != 1 {
+		t.Fatalf("expected one internal message, got %#v", req.Messages)
+	}
+	msg := req.Messages[0]
+	if msg.Role != "tool" {
+		t.Fatalf("expected tool role after tool_result conversion, got %#v", msg.Role)
+	}
+	if msg.Content.Content == nil || *msg.Content.Content != "" {
+		t.Fatalf("expected empty string tool result content, got %#v", msg.Content)
+	}
+}
+
 // A-H5: Server tools like `web_search_20250305` must preserve their raw body
 // so outbound can replay spec-specific fields. Function tools keep working
 // unchanged.
