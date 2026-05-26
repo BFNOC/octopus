@@ -18,7 +18,7 @@ export function SettingInfo() {
     const latestVersion = latestInfoQuery.data?.tag_name || '';
 
     // 前端版本与后端当前版本不一致 → 浏览器缓存问题
-    const isCacheMismatch = !!backendNowVersion && backendNowVersion !== APP_VERSION;
+    const isCacheMismatch = APP_VERSION !== 'unknown' && !!backendNowVersion && backendNowVersion !== APP_VERSION;
     // 最新版本与后端当前版本不一致 → 有新版本可更新
     const hasNewVersion = latestVersion && backendNowVersion && latestVersion !== backendNowVersion;
 
@@ -176,4 +176,3 @@ export function SettingInfo() {
         </div>
     );
 }
-

@@ -1,3 +1,6 @@
+ARG VERSION=v0.9.20-fork.14
+ARG COMMIT=unknown
+
 ## Stage 1: Build frontend
 FROM node:22-alpine AS frontend
 WORKDIR /app/web
@@ -7,7 +10,8 @@ RUN corepack enable && \
     pnpm install --frozen-lockfile --ignore-scripts && \
     pnpm rebuild @swc/core sharp unrs-resolver
 COPY web/ ./
-RUN pnpm run build
+ARG VERSION
+RUN NEXT_PUBLIC_APP_VERSION="${VERSION}" pnpm run build
 
 ## Stage 2: Build backend
 FROM golang:1.25-alpine AS backend
@@ -17,8 +21,8 @@ RUN go env -w GOPROXY=https://goproxy.cn,direct && \
     go mod download
 COPY . .
 COPY --from=frontend /app/web/out/ ./static/out/
-ARG VERSION=v0.9.20-fork.14
-ARG COMMIT=unknown
+ARG VERSION
+ARG COMMIT
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w \
   -X 'github.com/bestruirui/octopus/internal/conf.Version=${VERSION}' \
   -X 'github.com/bestruirui/octopus/internal/conf.Commit=${COMMIT}' \

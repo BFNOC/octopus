@@ -4,100 +4,139 @@
 
 ### Octopus
 
-**A Simple, Beautiful, and Elegant LLM API Aggregation & Load Balancing Service for Individuals**
+**为个人打造的简单、美观、优雅的 LLM API 聚合与负载均衡服务**
 
- English | [简体中文](README_zh.md)
+简体中文 | [English](README.en.md)
 
 </div>
 
-> Forked from [bestruirui/octopus](https://github.com/bestruirui/octopus) — see [Differences from Upstream](#-differences-from-upstream) for what this fork changes.
+> 本项目是 [BFNOC/octopus](https://github.com/BFNOC/octopus) fork，继承 [Hureru/octopus](https://github.com/Hureru/octopus) 与 [bestruirui/octopus](https://github.com/bestruirui/octopus)，并加入面向自用聚合站点、探活诊断、模型过滤和稳定 relay 的 fork-only 功能。差异见 [与上游的差异](#-与上游的差异)。
 
 
-## ✨ Features
+## 🧭 本 fork 定位
 
-- 🔀 **Multi-Channel Aggregation** - Connect multiple LLM provider channels with unified management
-- 🔑 **Multi-Key Support** - Support multiple API keys for a single channel
-- ⚡ **Smart Selection** - Multiple endpoints per channel, smart selection of the endpoint with the shortest delay
-- ⚖️ **Load Balancing** - Automatic request distribution for stable and efficient service
-- 🔄 **Protocol Conversion** - Seamless conversion between OpenAI Chat / OpenAI Responses / Anthropic API formats
-- 💰 **Price Sync** - Automatic model pricing updates
-- 🔃 **Model Sync** - Automatic synchronization of available model lists with channels
-- 📊 **Analytics** - Comprehensive request statistics, token consumption, and cost tracking
-- 🎨 **Elegant UI** - Clean and beautiful web management panel
-- 🗄️ **Multi-Database Support** - Support for SQLite, MySQL, PostgreSQL
+本 fork 不是单纯同步上游，而是在 Octopus 的 LLM API 聚合、负载均衡和协议转换基础上，继续补齐更偏生产自用的能力：
+
+- 面向多站点、多账号、多模型的批量运营：站点类型、账号同步、模型启停、余额与签到状态更细。
+- 面向不稳定上游的 relay 稳定性：探活、健康状态、额度耗尽自动禁用、SSE 心跳和流式边界修复。
+- 面向 Claude Code / Codex / OpenAI Responses / Anthropic / Gemini 混合使用场景的协议兼容。
+- 面向自部署发布的 fork 版本链路：`v0.9.20-fork.*`、GHCR 镜像、前后端版本一致性检查。
 
 
-## 🚀 Quick Start
+## 🧩 本 fork 独有功能速览
 
-### 🐳 Docker
+相对直接上游 Hureru/octopus，本 fork 重点增加：
 
-Run directly:
+- **模型过滤面板**：通道级 allow/deny 模型列表、批量启用/禁用、缓存失效与 WebUI 管理。
+- **探活与多协议 Tester**：单通道/批量模型探测、延迟与 TTFT 记录、自定义 prompt/header、OpenAI / Anthropic / Gemini / Responses 测试入口。
+- **健康仪表盘与分组健康检查**：通道健康状态、失败惩罚/恢复/隔离状态、分组候选通道探测结果可视化。
+- **快速设置向导**：站点添加、账号同步、模型筛选、分组创建的 4 步初始化流程。
+- **公益/付费站点分离**：付费站点跳过自动签到与批量签到，relay 默认排除付费站点通道，并支持按需手动纳入分组。
+- **额度耗尽自动处理**：识别上游余额/额度不足后，按来源自动禁用站点账号、源 token 或普通 channel key，避免失败通道反复参与 relay。
+- **Relay 稳定性增强**：前置阶段 SSE 心跳、Anthropic / OpenAI Responses 原始 SSE 透传、Responses compact proxy、流式 finish_reason / tool_result 边界修复。
+- **站点与渠道 UX 优化**：站点卡片快捷同步/签到、站点筛选、站点通道模型批量启停、工具栏搜索布局修复。
+- **发布与运维增强**：从 `internal/conf/version.go` 读取 fork 版本，发布 GHCR amd64 镜像，Docker 构建注入前端版本，并在 compose 中支持 `pull_policy: always`。
+
+
+## ✨ 特性
+
+- 🔀 **多渠道聚合** - 支持接入多个 LLM 供应商渠道，统一管理
+- 🔑 **多Key支持** - 单渠道支持配置多 Key
+- ⚡ **智能优选** - 单渠道多端点，智能选择延迟最小的端点请求
+- ⚖️ **负载均衡** - 自动分配请求，确保服务稳定高效
+- 🔄 **协议互转** - 支持 OpenAI Chat / OpenAI Responses / Anthropic 三种 API 格式互相转换
+- 💰 **价格同步** - 自动更新模型价格
+- 🔃 **模型同步** - 自动与渠道同步可用模型列表，省心省力
+- 📊 **数据统计** - 全面的请求统计、Token 消耗、费用追踪
+- 🎨 **优雅界面** - 简洁美观的 Web 管理面板
+- 🗄️ **多数据库支持** - 支持 SQLite、MySQL、PostgreSQL
+
+
+## 🚀 快速开始
+
+### 🐳 Docker 运行
+
+直接运行
 
 ```bash
-docker run -d --name octopus -v /path/to/data:/app/data -p 8080:8080 hureru/octopus
+docker run -d --name octopus -v /path/to/data:/app/data -p 8080:8080 ghcr.io/bfnoc/octopus:latest
 ```
 
-Or use docker compose:
+或者使用 docker compose 运行
 
 ```bash
-wget https://raw.githubusercontent.com/Hureru/octopus/refs/heads/dev/docker-compose.yml
+mkdir -p octopus && cd octopus
+cat > docker-compose.yml <<'YAML'
+services:
+  octopus:
+    image: ghcr.io/bfnoc/octopus:latest
+    pull_policy: always
+    ports:
+      - "8080:8080"
+    volumes:
+      - "./data:/app/data"
+    container_name: octopus
+    restart: unless-stopped
+YAML
 docker compose up -d
 ```
 
+> `docker-compose.yml` 中可使用 `pull_policy: always`，这样执行 `docker compose up -d` 时会先拉取 latest 镜像再启动。
 
-### 📦 Download from Release
 
-Download the binary for your platform from [Releases](https://github.com/Hureru/octopus/releases), then run:
+### 📦 从 Release 下载
+
+从 [Releases](https://github.com/BFNOC/octopus/releases) 下载对应平台的二进制文件，然后运行：
 
 ```bash
 ./octopus start
 ```
 
-### 🛠️ Build from Source
+### 🛠️ 源码运行
 
-**Requirements:**
+**环境要求：**
 - Go 1.24.4
 - Node.js 18+
 - pnpm
 
 ```bash
-# Clone the repository
-git clone https://github.com/Hureru/octopus.git
+# 克隆项目
+git clone https://github.com/BFNOC/octopus.git
 cd octopus
-# Build frontend
+# 构建前端
 cd web && pnpm install && pnpm run build && cd ..
-# Move frontend assets to static directory
+# 移动前端产物到 static 目录
 mv web/out static/
-# Start the backend service
+# 启动后端服务
 go run main.go start 
 ```
 
-> 💡 **Tip**: The frontend build artifacts are embedded into the Go binary, so you must build the frontend before starting the backend.
+> 💡 **提示**：前端构建产物会被嵌入到 Go 二进制文件中，所以必须先构建前端再启动后端。
 
-**Development Mode**
+**开发模式**
 
 ```bash
 cd web && pnpm install && NEXT_PUBLIC_API_BASE_URL="http://127.0.0.1:8080" pnpm run dev
-## Open a new terminal, start the backend service
+## 新建终端,启动后端服务
 go run main.go start
-## Access the frontend at
+## 访问前端地址
 http://localhost:3000
 ```
 
-### 🔐 Default Credentials
+### 🔐 默认账户
 
-After first launch, visit http://localhost:8080 and log in to the management panel with:
+首次启动后，访问 http://localhost:8080 使用以下默认账户登录管理面板：
 
-- **Username**: `admin`
-- **Password**: `admin`
+- **用户名**：`admin`
+- **密码**：`admin`
 
-> ⚠️ **Security Notice**: Please change the default password immediately after first login.
+> ⚠️ **安全提示**：请在首次登录后立即修改默认密码。
 
-### 📝 Configuration File
+### 📝 配置文件
 
-The configuration file is located at `data/config.json` by default and is automatically generated on first startup.
+配置文件默认位于 `data/config.json`，首次启动时自动生成。
 
-**Complete Configuration Example:**
+**完整配置示例：**
 
 ```json
 {
@@ -115,27 +154,27 @@ The configuration file is located at `data/config.json` by default and is automa
 }
 ```
 
-**Configuration Options:**
+**配置项说明：**
 
-| Option | Description | Default |
-|--------|-------------|---------|
-| `server.host` | Listen address | `0.0.0.0` |
-| `server.port` | Server port | `8080` |
-| `database.type` | Database type | `sqlite` |
-| `database.path` | Database connection string | `data/data.db` |
-| `log.level` | Log level | `info` |
+| 配置项 | 说明 | 默认值 |
+|--------|------|--------|
+| `server.host` | 监听地址 | `0.0.0.0` |
+| `server.port` | 服务端口 | `8080` |
+| `database.type` | 数据库类型 | `sqlite` |
+| `database.path` | 数据库连接地址 | `data/data.db` |
+| `log.level` | 日志级别 | `info` |
 
-**Database Configuration:**
+**数据库配置：**
 
-Three database types are supported:
+支持三种数据库：
 
-| Type | `database.type` | `database.path` Format |
-|------|-----------------|-----------------------|
+| 类型 | `database.type` | `database.path` 格式 |
+|------|-----------------|---------------------|
 | SQLite | `sqlite` | `data/data.db` |
 | MySQL | `mysql` | `user:password@tcp(host:port)/dbname` |
 | PostgreSQL | `postgres` | `postgresql://user:password@host:port/dbname?sslmode=disable` |
 
-**MySQL Configuration Example:**
+**MySQL 配置示例：**
 
 ```json
 {
@@ -146,7 +185,7 @@ Three database types are supported:
 }
 ```
 
-**PostgreSQL Configuration Example:**
+**PostgreSQL 配置示例：**
 
 ```json
 {
@@ -157,160 +196,162 @@ Three database types are supported:
 }
 ```
 
-> 💡 **Tip**: MySQL and PostgreSQL require manual database creation. The application will automatically create the table structure.
+> 💡 **提示**：MySQL 和 PostgreSQL 需要先手动创建数据库，程序会自动创建表结构。
 
-### 🌐 Environment Variables
+**环境变量：**
 
-All configuration options can be overridden via environment variables using the format `OCTOPUS_` + configuration path (joined with `_`):
+所有配置项均可通过环境变量覆盖，格式为 `OCTOPUS_` + 配置路径（用 `_` 连接）：
 
-| Environment Variable | Configuration Option |
-|---------------------|---------------------|
+| 环境变量 | 对应配置项 |
+|----------|-----------|
 | `OCTOPUS_SERVER_PORT` | `server.port` |
 | `OCTOPUS_SERVER_HOST` | `server.host` |
 | `OCTOPUS_DATABASE_TYPE` | `database.type` |
 | `OCTOPUS_DATABASE_PATH` | `database.path` |
 | `OCTOPUS_LOG_LEVEL` | `log.level` |
-| `OCTOPUS_GITHUB_PAT` | For rate limiting when getting the latest version (optional) |
-| `OCTOPUS_RELAY_MAX_SSE_EVENT_SIZE` | Maximum SSE event size (optional) |
-| `OCTOPUS_IMAGES_BODY_MEMORY_THRESHOLD_MB` | Images request body in-memory threshold. If exceeded, it will be spooled to a temporary file (optional, default 16) |
-| `OCTOPUS_IMAGES_BODY_MAX_MB` | Images request body maximum size. Requests above this limit are rejected (optional, default 256) |
-| `OCTOPUS_IMAGES_BODY_TMP_DIR` | Images request body temporary directory (optional, default `./cache`) |
-| `OCTOPUS_IMAGES_BODY_TMP_CLEANUP_HOURS` | Startup cleanup threshold for temporary files (optional, default 24) |
+| `OCTOPUS_GITHUB_PAT` | 用于获取最新版本时的速率限制(可选) |
+| `OCTOPUS_RELAY_MAX_SSE_EVENT_SIZE` | 最大 SSE 事件大小(可选) |
+| `OCTOPUS_IMAGES_BODY_MEMORY_THRESHOLD_MB` | Images 请求体内存缓存阈值，超过阈值会落盘临时文件(可选，默认 16) |
+| `OCTOPUS_IMAGES_BODY_MAX_MB` | Images 请求体最大大小限制，超过限制将拒绝请求(可选，默认 256) |
+| `OCTOPUS_IMAGES_BODY_TMP_DIR` | Images 请求体临时文件目录(可选，默认 `./cache`) |
+| `OCTOPUS_IMAGES_BODY_TMP_CLEANUP_HOURS` | 启动时清理临时文件的时间阈值(可选，默认 24) |
 
-## 📸 Screenshots
 
-### 🖥️ Desktop
+## 📸 界面预览
 
-<div align="center">
-<table>
-<tr>
-<td align="center"><b>Dashboard</b></td>
-<td align="center"><b>Channel Management</b></td>
-<td align="center"><b>Group Management</b></td>
-</tr>
-<tr>
-<td><img src="web/public/screenshot/desktop-home.png" alt="Dashboard" width="400"></td>
-<td><img src="web/public/screenshot/desktop-channel.png" alt="Channel" width="400"></td>
-<td><img src="web/public/screenshot/desktop-group.png" alt="Group" width="400"></td>
-</tr>
-<tr>
-<td align="center"><b>Price Management</b></td>
-<td align="center"><b>Logs</b></td>
-<td align="center"><b>Settings</b></td>
-</tr>
-<tr>
-<td><img src="web/public/screenshot/desktop-price.png" alt="Price Management" width="400"></td>
-<td><img src="web/public/screenshot/desktop-log.png" alt="Logs" width="400"></td>
-<td><img src="web/public/screenshot/desktop-setting.png" alt="Settings" width="400"></td>
-</tr>
-</table>
-</div>
-
-### 📱 Mobile
+### 🖥️ 桌面端
 
 <div align="center">
 <table>
 <tr>
-<td align="center"><b>Home</b></td>
-<td align="center"><b>Channel</b></td>
-<td align="center"><b>Group</b></td>
-<td align="center"><b>Price</b></td>
-<td align="center"><b>Logs</b></td>
-<td align="center"><b>Settings</b></td>
+<td align="center"><b>首页</b></td>
+<td align="center"><b>渠道</b></td>
+<td align="center"><b>分组</b></td>
 </tr>
 <tr>
-<td><img src="web/public/screenshot/mobile-home.png" alt="Mobile Home" width="140"></td>
-<td><img src="web/public/screenshot/mobile-channel.png" alt="Mobile Channel" width="140"></td>
-<td><img src="web/public/screenshot/mobile-group.png" alt="Mobile Group" width="140"></td>
-<td><img src="web/public/screenshot/mobile-price.png" alt="Mobile Price" width="140"></td>
-<td><img src="web/public/screenshot/mobile-log.png" alt="Mobile Logs" width="140"></td>
-<td><img src="web/public/screenshot/mobile-setting.png" alt="Mobile Settings" width="140"></td>
+<td><img src="web/public/screenshot/desktop-home.png" alt="首页" width="400"></td>
+<td><img src="web/public/screenshot/desktop-channel.png" alt="渠道" width="400"></td>
+<td><img src="web/public/screenshot/desktop-group.png" alt="分组" width="400"></td>
+</tr>
+<tr>
+<td align="center"><b>价格</b></td>
+<td align="center"><b>日志</b></td>
+<td align="center"><b>设置</b></td>
+</tr>
+<tr>
+<td><img src="web/public/screenshot/desktop-price.png" alt="价格" width="400"></td>
+<td><img src="web/public/screenshot/desktop-log.png" alt="日志" width="400"></td>
+<td><img src="web/public/screenshot/desktop-setting.png" alt="设置" width="400"></td>
+</tr>
+</table>
+</div>
+
+### 📱 移动端
+
+<div align="center">
+<table>
+<tr>
+<td align="center"><b>首页</b></td>
+<td align="center"><b>渠道</b></td>
+<td align="center"><b>分组</b></td>
+<td align="center"><b>价格</b></td>
+<td align="center"><b>日志</b></td>
+<td align="center"><b>设置</b></td>
+</tr>
+<tr>
+<td><img src="web/public/screenshot/mobile-home.png" alt="移动端首页" width="140"></td>
+<td><img src="web/public/screenshot/mobile-channel.png" alt="移动端渠道" width="140"></td>
+<td><img src="web/public/screenshot/mobile-group.png" alt="移动端分组" width="140"></td>
+<td><img src="web/public/screenshot/mobile-price.png" alt="移动端价格" width="140"></td>
+<td><img src="web/public/screenshot/mobile-log.png" alt="移动端日志" width="140"></td>
+<td><img src="web/public/screenshot/mobile-setting.png" alt="移动端设置" width="140"></td>
 </tr>
 </table>
 </div>
 
 
-## 📖 Documentation
+## 📖 功能说明
 
-### 📡 Channel Management
+### 📡 渠道管理
 
-Channels are the basic configuration units for connecting to LLM providers.
+渠道是连接 LLM 供应商的基础配置单元。
 
-**Base URL Guide:**
+**Base URL 说明：**
 
-The program automatically appends API paths based on channel type. You only need to provide the base URL:
+程序会根据渠道类型自动补全 API 路径，您只需填写基础 URL 即可：
 
-| Channel Type | Auto-appended Path | Base URL | Full Request URL Example |
-|--------------|-------------------|----------|--------------------------|
+| 渠道类型 | 自动补全路径 | 填写 URL | 完整请求地址示例 |
+|----------|-------------|----------|-----------------|
 | OpenAI Chat | `/chat/completions` | `https://api.openai.com/v1` | `https://api.openai.com/v1/chat/completions` |
 | OpenAI Responses | `/responses` | `https://api.openai.com/v1` | `https://api.openai.com/v1/responses` |
-| OpenAI Images | `/images/generations`, `/images/edits`, `/images/variations` | `https://api.openai.com/v1` | `https://api.openai.com/v1/images/generations` |
+| OpenAI Images | `/images/generations`、`/images/edits`、`/images/variations` | `https://api.openai.com/v1` | `https://api.openai.com/v1/images/generations` |
 | Anthropic | `/messages` | `https://api.anthropic.com/v1` | `https://api.anthropic.com/v1/messages` |
 | Gemini | `/models/:model:generateContent` | `https://generativelanguage.googleapis.com/v1beta` | `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent` |
 
-> 💡 **Tip**: No need to include specific API endpoint paths in the Base URL - the program handles this automatically.
+> 💡 **提示**：填写 Base URL 时无需包含具体的 API 端点路径，程序会自动处理。
 
 ---
 
-### 📁 Group Management
+### 📁 分组管理
 
-Groups aggregate multiple channels into a unified external model name.
+分组用于将多个渠道聚合为一个统一的对外模型名称。
 
-**Core Concepts:**
+**核心概念：**
 
-- **Group name** is the model name exposed by the program
-- When calling the API, set the `model` parameter to the group name
+- **分组名称** 即程序对外暴露的模型名称
+- 调用 API 时，将请求中的 `model` 参数设置为分组名称即可
 
-**Load Balancing Modes:**
+**负载均衡模式：**
 
-| Mode | Description |
-|------|-------------|
-| 🔄 **Round Robin** | Cycles through channels sequentially for each request |
-| 🎲 **Random** | Randomly selects an available channel for each request |
-| 🛡️ **Failover** | Prioritizes high-priority channels, switches to lower priority only on failure |
-| ⚖️ **Weighted** | Distributes requests based on configured channel weights |
+| 模式 | 说明 |
+|------|------|
+| 🔄 **轮询** | 每次请求依次切换到下一个渠道 |
+| 🎲 **随机** | 每次请求随机选择一个可用渠道 |
+| 🛡️ **故障转移** | 优先使用高优先级渠道，仅当其故障时才切换到低优先级渠道 |
+| ⚖️ **加权分配** | 根据渠道设置的权重比例分配请求 |
 
-> 💡 **Example**: Create a group named `gpt-4o`, add multiple providers' GPT-4o channels to it, then access all channels via a unified `model: gpt-4o`.
-
----
-
-### 💰 Price Management
-
-Manage model pricing information in the system.
-
-**Data Sources:**
-
-- The system periodically syncs model pricing data from [models.dev](https://github.com/sst/models.dev)
-- When creating a channel, if the channel contains models not in models.dev, the system automatically creates pricing information for those models on this page, so this page displays models that haven't had their prices fetched from upstream, allowing users to set prices manually
-- Manual creation of models that exist in models.dev is also supported for custom pricing
-
-**Price Priority:**
-
-| Priority | Source | Description |
-|:--------:|--------|-------------|
-| 🥇 High | This Page | Prices set by user in price management page |
-| 🥈 Low | models.dev | Auto-synced default prices |
-
-> 💡 **Tip**: To override a model's default price, simply set a custom price for it in the price management page.
+> 💡 **示例**：创建分组名称为 `gpt-4o`，将多个供应商的 GPT-4o 渠道加入该分组，即可通过统一的 `model: gpt-4o` 访问所有渠道。
 
 ---
 
-### ⚙️ Settings
+### 💰 价格管理
 
-Global system configuration.
+管理系统中的模型价格信息。
 
-**Statistics Save Interval (minutes):**
+**数据来源：**
 
-Since the program handles numerous statistics, writing to the database on every request would impact read/write performance. The program uses this strategy:
+- 系统会定期从 [models.dev](https://github.com/sst/models.dev) 同步更新模型价格数据
+- 当创建渠道时，若渠道包含的模型不在 models.dev 中，系统会自动在此页面创建该模型的价格信息,所以此页面显示的是没有从上游获取到价格的模型，用户可以手动设置价格
+- 也支持手动创建 models.dev 中已存在的模型，用于自定义价格
 
-- Statistics are first stored in **memory**
-- Periodically **batch-written** to the database at the configured interval
+**价格优先级：**
 
-> ⚠️ **Important**: When exiting the program, use proper shutdown methods (like `Ctrl+C` or sending `SIGTERM` signal) to ensure in-memory statistics are correctly written to the database. **Do NOT use `kill -9` or other forced termination methods**, as this may result in statistics data loss.
+| 优先级 | 来源 | 说明 |
+|:------:|------|------|
+| 🥇 高 | 本页面 | 用户在价格管理页面设置的价格 |
+| 🥈 低 | models.dev | 自动同步的默认价格 |
+
+> 💡 **提示**：如需覆盖某个模型的默认价格，只需在价格管理页面为其设置自定义价格即可。
 
 ---
 
-## 🔌 Client Integration
+### ⚙️ 设置
+
+系统全局配置项。
+
+**统计保存周期（分钟）：**
+
+由于程序涉及大量统计项目，若每次请求都直接写入数据库会影响读写性能。因此程序采用以下策略：
+
+- 统计数据先保存在 **内存** 中
+- 按设定的周期 **定期批量写入** 数据库
+
+> ⚠️ **重要提示**：退出程序时，请使用正常的关闭方式（如 `Ctrl+C` 或发送 `SIGTERM` 信号），以确保内存中的统计数据能正确写入数据库。**请勿使用 `kill -9` 等强制终止方式**，否则可能导致统计数据丢失。
+
+
+
+
+## 🔌 客户端接入
 
 ### OpenAI SDK
 
@@ -323,7 +364,7 @@ client = OpenAI(
     api_key="sk-octopus-P48ROljwJmWBYVARjwQM8Nkiezlg7WOrXXOWDYY8TI5p9Mzg", 
 )
 completion = client.chat.completions.create(
-    model="octopus-openai",  # Use the correct group name
+    model="octopus-openai",  # 填写正确的分组名称
     messages = [
         {"role": "user", "content": "Hello"},
     ],
@@ -333,7 +374,7 @@ print(completion.choices[0].message.content)
 
 ### Claude Code
 
-Edit `~/.claude/settings.json`
+编辑 `~/.claude/settings.json`
 
 ```json
 {
@@ -353,10 +394,10 @@ Edit `~/.claude/settings.json`
 
 ### Codex
 
-Edit `~/.codex/config.toml`
+编辑 `~/.codex/config.toml`
 
 ```toml
-model = "octopus-codex" # Use the correct group name
+model = "octopus-codex" # 填写正确的分组名称
 
 model_provider = "octopus"
 
@@ -364,8 +405,7 @@ model_provider = "octopus"
 name = "octopus"
 base_url = "http://127.0.0.1:8080/v1"
 ```
-
-Edit `~/.codex/auth.json`
+编辑 `~/.codex/auth.json`
 
 ```json
 {
@@ -373,71 +413,82 @@ Edit `~/.codex/auth.json`
 }
 ```
 
+
 ---
 
-## 🔀 Differences from Upstream
+## 🔀 与上游的差异
 
-Fork chain: [bestruirui/octopus](https://github.com/bestruirui/octopus) (original) → [Hureru/octopus](https://github.com/Hureru/octopus) (upstream) → **BFNOC/octopus** (this fork).
+Fork 链路：[bestruirui/octopus](https://github.com/bestruirui/octopus)（最上游）→ [Hureru/octopus](https://github.com/Hureru/octopus)（上游）→ **BFNOC/octopus**（本 fork）。
 
-### This fork vs Hureru/octopus
+### 本 fork vs Hureru/octopus
 
-Our additions on top of the direct upstream, focused on metapi-origin features and UX improvements.
+本 fork 的目标是保留上游主线能力，同时把自用多站点聚合、诊断、稳定性和发布链路补齐。本节只列当前 fork 已包含且相对直接上游形成差异的内容；上游持续变化，未合入本 fork 的上游新提交不计入本 fork 独有功能。
 
-**New features:**
+**新功能：**
 
-- **🔍 Channel Filter Panel** — model-level filtering with batch enable/disable, ported from metapi's filter architecture.
-- **🩺 Probe & Tester Enhancement** — enhanced model probing (latency, auto-disable) + multi-protocol tester (OpenAI / Anthropic / Gemini / Responses).
-- **📊 Health Dashboard** — real-time model health, probe results, and circuit breaker status in the web UI.
-- **🧹 Expired Cleanup Task** — background task to purge stale data (probe results, old logs).
-- **🧙 Quick Setup Wizard** — 4-step guided onboarding for first-time setup.
-- **⚡ Early Heartbeat** — SSE heartbeat during relay pre-stage (failover, backoff, slow upstream) to keep clients alive.
-- **🔄 Auto-Update** — download and hot-swap the binary on new releases.
-- **🏷️ Group Management** — 7 new endpoints for group CRUD, member management, and health aggregation.
+- **模型过滤与批量管理** —— 通道可维护 disabled / allowed 模型列表，WebUI 支持批量启用、禁用和保存过滤策略，API 层有批量读取/更新接口。
+- **探活、Tester 与健康视图** —— 模型探活记录状态、HTTP 状态、延迟、TTFT 与响应片段；Tester 独立支持多协议请求；设置页和首页展示通道/分组健康。
+- **快速设置向导** —— 新用户可以按“添加站点 → 同步账号 → 筛选模型 → 创建分组”的流程完成初始化，减少手动跨页面配置。
+- **公益/付费站点分离** —— 站点有 `free` / `paid` 类型；付费站点不参与自动签到，不默认进入 relay 负载均衡；需要时可手动纳入分组。
+- **额度耗尽自动禁用** —— relay 识别 `insufficient_quota` / `insufficient_user_quota` 等信号后，自动禁用对应站点账号、源 token 或普通 channel key，并把变化投影回站点通道。
+- **Relay 兼容与稳定性增强** —— 流式请求前置阶段输出 SSE 心跳，OpenAI Responses / Anthropic 同协议流可原样透传，Responses compact 代理保持 sticky，Anthropic 空 `tool_result` 与空 `finish_reason` 边界已修复。
+- **诊断解释能力** —— 分组选择解释接口可说明请求模型如何匹配 API Key、分组、候选通道和最终路由，方便排查“为什么选中这个渠道”。
+- **发布链路 fork 化** —— `internal/conf/version.go` 与 Docker 构建参数同步维护 `v0.9.20-fork.*`，Release workflow 发布 GHCR 镜像，前端构建注入 `NEXT_PUBLIC_APP_VERSION` 以检查前后端版本不一致。
 
-**Improvements:**
+**改进：**
 
-- **Probe system** — sticky probe sessions, configurable concurrency, graceful shutdown.
-- **Toolbar** — search box no longer overlaps adjacent buttons on expand.
-- **Site cards** — quick-action buttons for check-in and sync directly from the card.
+- **站点卡片与站点通道** —— 卡片上直接提供同步/签到快捷操作，站点通道页支持模型级启停、路由覆盖和批量变更。
+- **代理与探活一致性** —— 探活请求复用通道代理配置，代理解析错误不再静默吞掉。
+- **日志与流式边界修复** —— 日志 SSE 有心跳保活；OpenAI Chat tool history 的空 content、Anthropic 空工具结果、空结束原因等边界做了兼容。
+- **Docker 运维** —— compose 配置可通过 `pull_policy: always` 自动拉取 latest，减少手动 `docker pull`。
 
-> Diff: `git log upstream/dev..HEAD` after adding Hureru/octopus as `upstream`.
+> 可用 `git log upstream/dev..HEAD` 查看本 fork 相对直接上游的提交，用 `git log HEAD..upstream/dev` 查看尚未合入的上游新增提交。
 
 ### Hureru/octopus vs bestruirui/octopus
 
-Upstream's additions on top of the original project.
+上游在最上游项目基础上的新增功能。
 
-**New subsystems:**
+**新增子系统：**
 
-- **🌐 Site Management & Site Sync** — full new resource layer (backend `sitesync/` + dedicated frontend modules). Manages aggregator-site accounts: scheduled sync, check-in, balance / today's income, per-site pricing, archive/restore, AnyRouter, route probing, `sub2api`, and projected site channels.
-- **🔌 WebSocket relay** — upstream WS connection pool with health backoff, client-facing WS, DB-backed response affinity, and opt-in OpenAI Responses passthrough for Codex tools.
-- **🖼️ OpenAI Images API forwarding** with body cache.
-- **🩹 Transformer overhaul** — native StreamEvent pipeline across all adapters, Anthropic patching layer, role-alternation normalization, plus a long tail of cross-format fidelity fixes.
+- **🌐 站点管理 & 站点同步** —— 全新资源层（后端 `sitesync/` + 独立前端模块）。管理聚合站点账号：定时同步、自动签到、余额与今日收益、按站点价格、归档/恢复、AnyRouter、路由探测、`sub2api`，以及把账号物化为渠道的 projected site channel。
+- **🔌 WebSocket relay** —— 上游 WS 连接池（带健康退避）、面向客户端的 WS、DB-backed response affinity，以及面向 Codex 工具的可选 OpenAI Responses 直通。
+- **🖼️ OpenAI Images API 转发**（带 body 缓存）。
+- **🩹 Transformer 大重构** —— 三大适配器统一原生 StreamEvent 流水线、Anthropic patching 层、role 交替规范化，及大量跨格式保真修复。
 
-**Reworked:**
+**重做：**
 
-- **Channel module** — tabbed Site/Manual layout; group editor preserves channel metadata.
-- **Relay core** — route learning, retry, cancel propagation, Responses compact proxy, log filtering by channel ID.
-- **Auth** — JWT secret persisted in DB (rotation-safe), no longer derived from credentials.
-- **Backup**, **logs** (`Item.tsx` rewrite), and **home charts** redesigned.
+- **渠道模块** —— Site / Manual Tab 切换；分组编辑器保留渠道元数据。
+- **Relay 内核** —— 路由学习、重试、取消传播、Responses compact proxy、日志按 channel ID 过滤。
+- **认证** —— JWT 密钥持久化到数据库（密码轮换更安全），不再从凭证派生。
+- **备份**、**日志**（`Item.tsx` 重写）、**首页图表** 全部重做。
 
-**Misc:**
+**杂项：**
 
-- Claude Opus 4.7 adaptive thinking; DB migrations 003–012; new Site Automation panel in Settings.
+- 支持 Claude Opus 4.7 adaptive thinking；DB 迁移 003–012；设置页新增 Site Automation 面板；上游还包含模型定价等持续演进。
+
+### 本 fork vs 最上游 bestruirui/octopus
+
+相对原始上游，本 fork 同时包含 Hureru/octopus 的站点同步、WebSocket relay、Images API、Transformer 重构等大功能，以及本 fork 自己追加的模型过滤、探活/Tester、健康诊断、公益/付费站点分离、额度自动禁用和 fork 发布链路。
+
+
+## 🌍 English Summary
+
+This fork keeps Octopus as a personal LLM API aggregation and load-balancing service, but adds fork-specific operations for multi-site accounts, model filtering, probing, health diagnostics, quota auto-disable, SSE/streaming robustness, and forked release images. Full English documentation is available in [README.en.md](README.en.md).
 
 ---
 
-## 📂 Docs
+## 📂 文档
 
-- [Upstream Sync Log](docs/SYNC.md) — cherry-pick history, conflict resolutions, skipped commits
+- [上游同步记录](docs/SYNC.md) — cherry-pick 历史、冲突解决、跳过的 commit
 
 ---
 
-## 🤝 Acknowledgments
+## 🤝 致谢
 
-- 🙏 [looplj/axonhub](https://github.com/looplj/axonhub) - The LLM API adaptation module in this project is directly derived from this repository
-- 📊 [sst/models.dev](https://github.com/sst/models.dev) - AI model database providing model pricing data
-- 🇨🇳 [AtomGit](https://atomgit.com/bestruirui/octopus) - China-based code hosting
+- 🙏 [looplj/axonhub](https://github.com/looplj/axonhub) - 本项目的 LLM API 适配模块直接源自该仓库的实现
+- 📊 [sst/models.dev](https://github.com/sst/models.dev) - AI 模型数据库，提供模型价格数据
+- 🇨🇳 [AtomGit](https://atomgit.com/bestruirui/octopus) - 国内代码托管
 
-## 🔗 Friend Links
+## 🔗 友链
 
-- 🐧 [LinuxDO](https://linux.do) - A community for tech enthusiasts
+- 🐧 [LinuxDO](https://linux.do) - 真正的技术社区
